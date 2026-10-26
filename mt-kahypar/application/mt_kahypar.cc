@@ -49,6 +49,8 @@ using namespace mt_kahypar;
 using HighResClockTimepoint = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
 int run(int argc, char* argv[]) {
+  ENABLE_HEAP_PROFILER();
+
   Context context(false);
   processCommandLineInput(context, argc, argv);
 
@@ -160,6 +162,9 @@ int run(int argc, char* argv[]) {
 
   utils::delete_hypergraph(hypergraph);
   utils::delete_partitioned_hypergraph(partitioned_hypergraph);
+
+  PRINT_HEAP_PROFILE(std::cout);
+  DISABLE_HEAP_PROFILER();
 
   return 0;
 }
