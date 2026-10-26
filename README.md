@@ -107,6 +107,23 @@ The build produces the executable `MtKaHyPar`, which can be found in `build/mt-k
 As a user of Mt-KaHyPar, the `default` cmake preset is appropriate (or `python` for installing the Python interface).
 If you work on Mt-KaHyPar or want to run benchmarks, use the `dev` or `minimal-dev` preset.
 
+### Heap allocation profiling
+
+To log allocations routed through Mt-KaHyPar's scalable allocators, enable
+`KAHYPAR_ENABLE_HEAP_PROFILING` when configuring the build:
+
+    cmake -B build --preset=default -DKAHYPAR_ENABLE_HEAP_PROFILING=On
+    cmake --build build --target MtKaHyPar-CLI --config Release --parallel 4
+
+The profiler writes CSV events to standard error in the format
+`event,pointer,size_bytes,allocator`. Capture them separately when running the
+program, for example with `<path-to-executable> ... 2> heap-profile.csv`.
+`scalable_allocator` events include the allocation size on both allocation and
+free; `mtk_scalable_free` events record size `0` because its API does not receive
+the size. This only profiles calls through these allocator wrappers; it does not
+include allocations made directly by the C++ runtime, TBB containers, or other
+dependencies.
+
 Running Mt-KaHyPar
 -----------
 

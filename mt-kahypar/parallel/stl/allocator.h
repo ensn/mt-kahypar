@@ -26,130 +26,129 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdlib>
 #include <cstring>
-#include <limits>
-
-#ifndef NDEBUG
 #include <memory>
-#include <stdlib.h>
-#else
+#include <type_traits>
+
+#ifdef NDEBUG
 #include <tbb/tbb_allocator.h>
 #include <tbb/scalable_allocator.h>
 #endif
 
-#include "mt-kahypar/parallel/stl/heap_profiler.h"
+#ifdef KAHYPAR_ENABLE_HEAP_PROFILING
+#include <cstdio>
+#endif
 
 namespace mt_kahypar {
 namespace parallel {
 
-inline void mtk_record_allocation(void* ptr, size_t size) {
 #ifdef KAHYPAR_ENABLE_HEAP_PROFILING
-  if (ptr) {
-    heap_profiler::HeapProfiler::global().record_alloc(ptr, size);
-  }
-#else
-  (void) ptr;
-  (void) size;
-#endif
+inline void record_heap_profile_event(const char* event,
+                                     const void* pointer,
+                                     const size_t size,
+                                     const char* allocator) {
+  std::fprintf(stderr, "%s,%p,%zu,%s\n", event, pointer, size, allocator);
 }
-
-inline void mtk_record_deallocation(void* ptr) {
-#ifdef KAHYPAR_ENABLE_HEAP_PROFILING
-  if (ptr) {
-    heap_profiler::HeapProfiler::global().record_free(ptr);
-  }
-#else
-  (void) ptr;
 #endif
-}
 
 #ifndef NDEBUG
-template<typename T>
+// note: tbb allocators will still be used for TBB data structures such as
+// tbb::concurrent_vector, tbb::concurrent_queue or tbb::enumerable_thread_specific
+
+template <typename T>
 using scalable_allocator_base = std::allocator<T>;
+
 #else
-template<typename T>
+template <typename T>
 using scalable_allocator_base = tbb::tbb_allocator<T>;
 #endif
 
-template<typename T>
-class scalable_allocator : public scalable_allocator_base<T> {
+template <typename T>
+class scalable_allocator {
+  template <typename>
+  friend class scalable_allocator;
+
+  using base_allocator = scalable_allocator_base<T>;
+
  public:
   using value_type = T;
-
-  template<typename U>
+  using is_always_equal = std::true_type;
+  template <typename U>
   struct rebind {
     using other = scalable_allocator<U>;
   };
 
   scalable_allocator() noexcept = default;
-  template<typename U>
+
+  template <typename U>
   scalable_allocator(const scalable_allocator<U>&) noexcept { }
 
-  T* allocate(size_t n) {
-    scalable_allocator_base<T> base;
-    T* ptr = base.allocate(n);
-    mtk_record_allocation(ptr, n * sizeof(T));
+  [[nodiscard]] T* allocate(const size_t n) {
+    T* ptr = _allocator.allocate(n);
+#ifdef KAHYPAR_ENABLE_HEAP_PROFILING
+    record_heap_profile_event("alloc", ptr, n * sizeof(T), "scalable_allocator");
+#endif
     return ptr;
   }
 
-  void deallocate(T* ptr, size_t n) noexcept {
-    mtk_record_deallocation(ptr);
-    scalable_allocator_base<T> base;
-    base.deallocate(ptr, n);
+  void deallocate(T* ptr, const size_t n) noexcept {
+#ifdef KAHYPAR_ENABLE_HEAP_PROFILING
+    record_heap_profile_event("free", ptr, n * sizeof(T), "scalable_allocator");
+#endif
+    _allocator.deallocate(ptr, n);
   }
 
-  template<typename U>
+  template <typename U>
   bool operator==(const scalable_allocator<U>&) const noexcept {
     return true;
   }
 
-  template<typename U>
-  bool operator!=(const scalable_allocator<U>&) const noexcept {
-    return false;
-  }
+ private:
+  base_allocator _allocator;
 };
 
-// note: TBB allocators will still be used for TBB data structures such as
-// tbb::concurrent_vector, tbb::concurrent_queue or tbb::enumerable_thread_specific
+inline void* mtk_scalable_malloc(const size_t size) {
 #ifndef NDEBUG
-inline void* mtk_scalable_malloc(size_t size) {
-  void* ptr = malloc(size);
-  mtk_record_allocation(ptr, size);
-  return ptr;
-}
-
-inline void* mtk_scalable_calloc(size_t nobj, size_t size) {
-  void* ptr = calloc(nobj, size);
-  const size_t allocated_size =
-      nobj != 0 && size > std::numeric_limits<size_t>::max() / nobj ? 0 : nobj * size;
-  mtk_record_allocation(ptr, allocated_size);
-  return ptr;
-}
-
-inline void mtk_scalable_free(void* ptr) {
-  mtk_record_deallocation(ptr);
-  free(ptr);
-}
+  void* ptr = std::malloc(size);
 #else
-inline void* mtk_scalable_malloc(size_t size) {
   void* ptr = scalable_malloc(size);
-  mtk_record_allocation(ptr, size);
+#endif
+#ifdef KAHYPAR_ENABLE_HEAP_PROFILING
+  if (ptr != nullptr) {
+    record_heap_profile_event("alloc", ptr, size, "mtk_scalable_malloc");
+  }
+#endif
   return ptr;
 }
 
-inline void* mtk_scalable_calloc(size_t nobj, size_t size) {
+inline void* mtk_scalable_calloc(const size_t nobj, const size_t size) {
+#ifndef NDEBUG
+  void* ptr = std::calloc(nobj, size);
+#else
   void* ptr = scalable_calloc(nobj, size);
-  const size_t allocated_size =
-      nobj != 0 && size > std::numeric_limits<size_t>::max() / nobj ? 0 : nobj * size;
-  mtk_record_allocation(ptr, allocated_size);
+#endif
+#ifdef KAHYPAR_ENABLE_HEAP_PROFILING
+  if (ptr != nullptr) {
+    record_heap_profile_event("alloc", ptr, nobj * size, "mtk_scalable_calloc");
+  }
+#endif
   return ptr;
 }
 
 inline void mtk_scalable_free(void* ptr) {
-  mtk_record_deallocation(ptr);
-  scalable_free(ptr);
-}
+#ifdef KAHYPAR_ENABLE_HEAP_PROFILING
+  if (ptr != nullptr) {
+    record_heap_profile_event("free", ptr, 0, "mtk_scalable_free");
+  }
 #endif
+#ifndef NDEBUG
+  std::free(ptr);
+#else
+  scalable_free(ptr);
+#endif
+}
 
 }  // namespace parallel
 }  // namespace mt_kahypar
