@@ -33,10 +33,10 @@
 
 #include "mt-kahypar/definitions.h"
 #ifdef KAHYPAR_ENABLE_HIGHEST_QUALITY_FEATURES
-#include "mt-kahypar/partition/coarsening/nlevel_coarsener.h"
+#include "mt-kahypar/partition/coarsening/nlevel/nlevel_coarsener.h"
 #endif
-#include "mt-kahypar/partition/coarsening/multilevel_coarsener.h"
-#include "mt-kahypar/partition/coarsening/deterministic_multilevel_coarsener.h"
+#include "mt-kahypar/partition/coarsening/multilevel/multilevel_coarsener.h"
+#include "mt-kahypar/partition/coarsening/multilevel/deterministic_multilevel_coarsener.h"
 #include "mt-kahypar/partition/coarsening/do_nothing_coarsener.h"
 #include "mt-kahypar/partition/coarsening/policies/rating_acceptance_policy.h"
 #include "mt-kahypar/partition/coarsening/policies/rating_heavy_node_penalty_policy.h"
@@ -48,19 +48,19 @@
 namespace mt_kahypar {
 using MultilevelCoarsenerDispatcher = kahypar::meta::StaticMultiDispatchFactory<MultilevelCoarsener,
                                                                                 ICoarsener,
-                                                                                kahypar::meta::Typelist<TypeTraitsList,
+                                                                                kahypar::meta::Typelist<MultilevelTypeTraitsList,
                                                                                                         RatingScorePolicies,
                                                                                                         HeavyNodePenaltyPolicies,
                                                                                                         AcceptancePolicies> >;
 
 using DeterministicCoarsenerDispatcher = kahypar::meta::StaticMultiDispatchFactory<DeterministicMultilevelCoarsener,
                                                                                    ICoarsener,
-                                                                                   kahypar::meta::Typelist<TypeTraitsList>>;
+                                                                                   kahypar::meta::Typelist<MultilevelTypeTraitsList>>;
 
 #ifdef KAHYPAR_ENABLE_HIGHEST_QUALITY_FEATURES
 using NLevelCoarsenerDispatcher = kahypar::meta::StaticMultiDispatchFactory<NLevelCoarsener,
                                                                             ICoarsener,
-                                                                            kahypar::meta::Typelist<TypeTraitsList,
+                                                                            kahypar::meta::Typelist<NLevelTypeTraitsList,
                                                                                                     RatingScorePolicies,
                                                                                                     HeavyNodePenaltyPolicies,
                                                                                                     AcceptancePolicies> >;

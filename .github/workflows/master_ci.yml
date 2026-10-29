@@ -23,11 +23,11 @@ jobs:
 
     steps:
       - name: Checkout HEAD
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install libtbb-dev libboost-program-options-dev libhwloc-dev lcov gcovr ${{ matrix.compiler.install_cmd }}
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev libhwloc-dev ${{ matrix.compiler.install_cmd }}
 
       - name: Install Mt-KaHyPar
         env:
@@ -48,11 +48,11 @@ jobs:
 
     steps:
       - name: Checkout HEAD
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install libtbb-dev libboost-program-options-dev libhwloc-dev libudev-dev
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev libhwloc-dev libudev-dev
 
       - name: Install Mt-KaHyPar
         run: |
@@ -70,6 +70,30 @@ jobs:
             exit 1
           fi
 
+  mt_kahypar_build_minimal_depencies:
+    name: Build With Minimal Dependencies
+    runs-on: ubuntu-24.04
+    env:
+      CI_ACTIVE : 1
+
+    steps:
+      - name: Checkout HEAD
+        uses: actions/checkout@v7
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev
+
+      - name: Install Mt-KaHyPar
+        run: |
+          rm -rf build
+          mkdir build
+          cd build
+          cmake .. --preset=default -DKAHYPAR_CI_BUILD=ON -DKAHYPAR_DISABLE_HWLOC=ON -DKAHYPAR_DISABLE_PARLAY=ON -DKAHYPAR_PYTHON=ON
+          make -j4 MtKaHyPar
+          make -j4 mtkahypar
+          make -j4 mtkahypar_python
+
   mt_kahypar_test_suite:
     name: Test Suite
     runs-on: ubuntu-22.04  # note: stay on 22.04 since lcov behaves weird on 24.04
@@ -78,11 +102,11 @@ jobs:
 
     steps:
       - name: Checkout HEAD
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install libtbb-dev libhwloc-dev libboost-program-options-dev lcov gcovr
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev libhwloc-dev lcov gcovr
 
       - name: Install Mt-KaHyPar Test Suite
         run: |
@@ -100,8 +124,8 @@ jobs:
       - name: Report Code Coverage
         run: |
           cd build
-          lcov --directory . --capture --output-file coverage.info --exclude '**/external_tools/**/*' --exclude '**/tests/**/*' --exclude '**/googletest-src/**/*'
-          lcov --remove coverage.info '/usr/**/*' '**/external_tools/**/*' '**/tests/**/*' --output-file coverage.info
+          lcov --directory . --capture --output-file coverage.info --exclude '**/external_tools/**/*' --exclude '**/tests/**/*' --exclude '**/googletest-src/**/*' --exclude '**/_deps/**/*'
+          lcov --remove coverage.info '/usr/**/*' '**/external_tools/**/*' '**/tests/**/*' '**/_deps/**/*' --output-file coverage.info
           lcov --list coverage.info
           gcovr -r ../ -x > report.xml
           cd ..
@@ -115,11 +139,11 @@ jobs:
 
     steps:
       - name: Checkout HEAD
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install libtbb-dev libhwloc-dev libboost-program-options-dev lcov gcovr
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev libhwloc-dev
 
       - name: Install Mt-KaHyPar Integration Tests
         run: |
@@ -144,11 +168,11 @@ jobs:
 
     steps:
       - name: Checkout HEAD
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install libtbb-dev libhwloc-dev libboost-program-options-dev lcov gcovr
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev libhwloc-dev
 
       - name: Run Mt-KaHyPar C Library Interface Tests
         run: |
@@ -166,11 +190,11 @@ jobs:
 
     steps:
       - name: Checkout HEAD
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install libtbb-dev libhwloc-dev libboost-program-options-dev lcov gcovr
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev libhwloc-dev
 
       - name: Build Mt-KaHyPar Python Interface
         run: |
@@ -182,29 +206,27 @@ jobs:
 
       - name: Run Mt-KaHyPar Python Interface Tests
         run: |
-          cd python/tests
-          cp ../../build/python/mtkahypar*.so mtkahypar.so
-          python3 test_mtkahypar.py -v
+          ctest --test-dir build -R mtkahypar_python_test --output-on-failure
 
-  mt_kahypar_windows_build:
-    name: Windows Build
+  mt_kahypar_windows_mingw_build:
+    name: Windows MinGW Build
     runs-on: windows-latest
     env:
       CI_ACTIVE : 1
 
     steps:
       - name: Checkout HEAD
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
           install: git make
 
-      - name: Install Boost and TBB
+      - name: Install TBB
         shell: msys2 {0}
         run: |
-          pacman --noconfirm -S mingw-w64-x86_64-boost mingw-w64-x86_64-tbb mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc
+          pacman --noconfirm -S mingw-w64-x86_64-tbb mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc
 
       - name: Put MSYS2_MinGW64 on Path
         run: |
@@ -226,6 +248,38 @@ jobs:
           cd build
           ./tests/mtkahypar_tests
 
+  mt_kahypar_windows_msvc_build:
+    name: Windows MSVC Build
+    runs-on: windows-latest
+    env:
+      CI_ACTIVE : 1
+
+    steps:
+      - name: Checkout HEAD
+        uses: actions/checkout@v7
+
+      - name: Setup MSVC
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+
+      - name: Install Mt-KaHyPar Multilevel Tests
+        shell: cmd
+        run: |
+          cmake --fresh -B build --preset=dev -G Ninja ^
+            -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl ^
+            -DKAHYPAR_CI_BUILD=ON ^
+            -DKAHYPAR_ENABLE_HIGHEST_QUALITY_FEATURES=OFF ^
+            -DKAHYPAR_ENABLE_LARGE_K_PARTITIONING_FEATURES=OFF ^
+            -DKAHYPAR_ENABLE_THREAD_PINNING=OFF
+          cmake --build build --target mtkahypar_tests -j 4
+
+      - name: Run Mt-KaHyPar Tests
+        shell: cmd
+        run: |
+          cd build
+          .\tests\mtkahypar_tests.exe
+
   mt_kahypar_macos_build:
     name: MacOS Build
     runs-on: macos-latest
@@ -234,11 +288,11 @@ jobs:
 
     steps:
       - name: Checkout HEAD
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Dependencies
         run: |
-          brew install tbb boost hwloc lcov gcovr
+          brew install tbb hwloc
 
       - name: Install Mt-KaHyPar Multilevel Tests
         run: |

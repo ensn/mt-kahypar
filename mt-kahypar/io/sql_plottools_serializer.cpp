@@ -51,6 +51,10 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
       oss << " fixed_vertex_filename=" << context.partition.fixed_vertex_filename.substr(
               context.partition.fixed_vertex_filename.find_last_of('/') + 1);
     }
+    if ( context.partition.input_partition_filename != "" ) {
+      oss << " input_partition_filename=" << context.partition.input_partition_filename.substr(
+              context.partition.input_partition_filename.find_last_of('/') + 1);
+    }
     oss << " numHNs=" << hypergraph.initialNumNodes()
         << " numHEs=" << (PartitionedHypergraph::is_graph ? hypergraph.initialNumEdges() / 2 : hypergraph.initialNumEdges())
         << " mode=" << context.partition.mode
@@ -63,6 +67,7 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
         << " seed=" << context.partition.seed
         << " num_vcycles=" << context.partition.num_vcycles
         << " deterministic=" << context.partition.deterministic
+        << " allow_empty_blocks=" << context.partition.allow_empty_blocks
         << " perform_parallel_recursion_in_deep_multilevel=" << context.partition.perform_parallel_recursion_in_deep_multilevel;
     oss << " large_hyperedge_size_threshold_factor=" << context.partition.large_hyperedge_size_threshold_factor
         << " smallest_large_he_size_threshold=" << context.partition.smallest_large_he_size_threshold
@@ -92,6 +97,11 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
         << " coarsening_vertex_degree_sampling_threshold=" << context.coarsening.vertex_degree_sampling_threshold
         << " coarsening_num_sub_rounds_deterministic=" << context.coarsening.num_sub_rounds_deterministic
         << " coarsening_det_resolve_swaps=" << std::boolalpha << context.coarsening.det_resolve_swaps
+        << " coarsening_use_two_hop=" << std::boolalpha << context.coarsening.use_two_hop
+        << " coarsening_two_hop_full_shrinkage=" << std::boolalpha << context.coarsening.two_hop_full_shrinkage
+        << " coarsening_two_hop_shrink_threshold=" << context.coarsening.two_hop_shrink_threshold
+        << " coarsening_two_hop_cluster_size=" << context.coarsening.two_hop_cluster_size
+        << " coarsening_two_hop_degree_threshold=" << context.coarsening.two_hop_degree_threshold
         << " coarsening_contraction_limit=" << context.coarsening.contraction_limit
         << " rating_function=" << context.coarsening.rating.rating_function
         << " rating_heavy_node_penalty_policy=" << context.coarsening.rating.heavy_node_penalty_policy
@@ -157,7 +167,6 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
         << " global_refine_lp_algorithm=" << context.refinement.global.lp_algorithm
         << " global_refine_lp_unconstrained=" << std::boolalpha << context.refinement.global.lp_unconstrained;
     oss << " flow_algorithm=" << context.refinement.flows.algorithm
-        << " flow_parallel_searches_multiplier=" << context.refinement.flows.parallel_searches_multiplier
         << " flow_num_parallel_searches=" << context.refinement.flows.num_parallel_searches
         << " flow_max_bfs_distance=" << context.refinement.flows.max_bfs_distance
         << " flow_min_relative_improvement_per_round=" << context.refinement.flows.min_relative_improvement_per_round
@@ -205,7 +214,9 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
       if ( context.partition.objective != Objective::soed ) {
         oss << " soed=" << metrics::quality(hypergraph, Objective::soed);
       }
-      oss << " imbalance=" << metrics::imbalance(hypergraph, context);
+      BalanceMetrics imbalance = metrics::imbalance(hypergraph, context);
+      oss << " imbalance=" << imbalance.imbalance_value;
+      oss << " violates_non_empty_blocks=" << imbalance.violates_non_empty_blocks;
     }
     oss << " totalPartitionTime=" << elapsed_seconds.count();
 

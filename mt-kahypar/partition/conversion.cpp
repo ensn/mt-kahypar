@@ -32,11 +32,26 @@
 
 namespace mt_kahypar {
 
+mt_kahypar_preset_type_t to_preset_c_type(const PresetType preset) {
+  switch ( preset ) {
+    case PresetType::default_preset: return DEFAULT;
+    case PresetType::quality: return QUALITY;
+    case PresetType::highest_quality: return HIGHEST_QUALITY;
+    case PresetType::deterministic: return DETERMINISTIC;
+    case PresetType::deterministic_quality: return DETERMINISTIC_QUALITY;
+    case PresetType::large_k: return LARGE_K;
+    case PresetType::UNDEFINED: throw InvalidParameterException("Unknown preset type!");
+    default: throw InvalidParameterException("Unknown preset type!");
+  }
+  return DEFAULT;
+}
+
 mt_kahypar_hypergraph_type_t to_hypergraph_c_type(const PresetType preset,
                                                   const InstanceType instance) {
   if ( instance == InstanceType::hypergraph ) {
     switch ( preset ) {
       case PresetType::deterministic:
+      case PresetType::deterministic_quality:
       case PresetType::large_k:
       case PresetType::default_preset:
       case PresetType::quality: return STATIC_HYPERGRAPH;
@@ -47,6 +62,7 @@ mt_kahypar_hypergraph_type_t to_hypergraph_c_type(const PresetType preset,
   else if ( instance == InstanceType::graph ) {
     switch ( preset ) {
       case PresetType::deterministic:
+      case PresetType::deterministic_quality:
       case PresetType::large_k:
       case PresetType::default_preset:
       case PresetType::quality: return STATIC_GRAPH;
@@ -114,7 +130,11 @@ PresetType to_preset_type(const Mode mode,
                           const CoarseningAlgorithm coarsening_algo,
                           const FlowAlgorithm flow_algo) {
   if ( coarsening_algo == CoarseningAlgorithm::deterministic_multilevel_coarsener ) {
-    return PresetType::deterministic;
+    if ( flow_algo == FlowAlgorithm::deterministic ) {
+      return PresetType::deterministic_quality;
+    } else {
+      return PresetType::deterministic;
+    }
   } else if ( mode == Mode::deep_multilevel && k >= 1024 ) {
     return PresetType::large_k;
   } else if ( coarsening_algo == CoarseningAlgorithm::multilevel_coarsener ) {
@@ -134,6 +154,35 @@ InstanceType to_instance_type(const FileFormat format) {
     return InstanceType::graph;
   } else if ( format == FileFormat::hMetis ) {
     return InstanceType::hypergraph;
+  }
+  return InstanceType::UNDEFINED;
+}
+
+InstanceType get_instance_type(mt_kahypar_hypergraph_t hypergraph) {
+  switch ( hypergraph.type ) {
+    case STATIC_GRAPH:
+    case DYNAMIC_GRAPH:
+      return InstanceType::graph;
+    case STATIC_HYPERGRAPH:
+    case DYNAMIC_HYPERGRAPH:
+      return InstanceType::hypergraph;
+    case NULLPTR_HYPERGRAPH:
+      return InstanceType::UNDEFINED;
+  }
+  return InstanceType::UNDEFINED;
+}
+
+InstanceType get_instance_type(mt_kahypar_partitioned_hypergraph_t partitioned_hg) {
+  switch ( partitioned_hg.type ) {
+    case MULTILEVEL_GRAPH_PARTITIONING:
+    case N_LEVEL_GRAPH_PARTITIONING:
+      return InstanceType::graph;
+    case MULTILEVEL_HYPERGRAPH_PARTITIONING:
+    case N_LEVEL_HYPERGRAPH_PARTITIONING:
+    case LARGE_K_PARTITIONING:
+      return InstanceType::hypergraph;
+    case NULLPTR_PARTITION:
+      return InstanceType::UNDEFINED;
   }
   return InstanceType::UNDEFINED;
 }

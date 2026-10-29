@@ -190,6 +190,11 @@ class PartitionedHypergraph {
     return _hg->numRemovedHypernodes();
   }
 
+  // ! Max weight of removed degree zero vertex
+  HypernodeWeight maxWeightOfRemovedDegreeZeroNode() const {
+    return _hg->maxWeightOfRemovedDegreeZeroNode();
+  }
+
   // ! Initial number of hyperedges
   HyperedgeID initialNumEdges() const {
     return _hg->initialNumEdges();
@@ -350,7 +355,7 @@ class PartitionedHypergraph {
   // ####################### Hyperedge Information #######################
 
   // ! Weight of a hyperedge
-  HypernodeWeight edgeWeight(const HyperedgeID e) const {
+  HyperedgeWeight edgeWeight(const HyperedgeID e) const {
     return _hg->edgeWeight(e);
   }
 
@@ -474,6 +479,19 @@ class PartitionedHypergraph {
         _con_info.addBlock(he, block);
       }
     }
+  }
+
+  /*!
+   * Restores a single pin hyperedge previously removed from the hypergraph.
+   */
+  void restoreSinglePinEdge(const HyperedgeID& he) {
+    _hg->restoreEdge(he);
+    ASSERT(edgeSize(he) == 1);  // trying to get the size before restoring triggers another assertion
+
+    const HypernodeID pin = _hg->_incidence_array[_hg->hyperedge(he).firstEntry()];
+    const PartitionID block = partID(pin);
+    _con_info.setPinCountInPart(he, block, 1);
+    _con_info.addBlock(he, block);
   }
 
   /**
@@ -1169,6 +1187,7 @@ class PartitionedHypergraph {
       for (HypernodeID u = r.begin(); u < r.end(); ++u) {
         if ( nodeIsEnabled(u) ) {
           const PartitionID pu = partID( u );
+          ASSERT(pu >= 0 && pu < _k);
           const HypernodeWeight wu = nodeWeight( u );
           pws[pu] += wu;
         }
@@ -1190,7 +1209,9 @@ class PartitionedHypergraph {
       for (HyperedgeID he = r.begin(); he < r.end(); ++he) {
         if ( edgeIsEnabled(he) ) {
           for (const HypernodeID& pin : pins(he)) {
-            ++pin_counts[partID(pin)];
+            const PartitionID part = partID(pin);
+            ASSERT(part >= 0 && part < _k);
+            ++pin_counts[part];
           }
 
           for (PartitionID p = 0; p < _k; ++p) {

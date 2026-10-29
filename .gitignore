@@ -10,11 +10,7 @@ clang-debug/*
 *.h~
 *.py~
 *.cfg~
-build/*
-build2/*
-build_numa/*
-build_nlevel/*
-build_interleaved/*
+build*/*
 rel2/
 external_tools/*
 relwithdebinfo/*

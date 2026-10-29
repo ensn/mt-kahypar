@@ -83,35 +83,95 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
     case STATIC_HYPERGRAPH:
       return constructHypergraph<ds::StaticHypergraph>(
         num_hypernodes, num_hyperedges, hyperedges,
-        hyperedges_weight.data(), hypernodes_weight.data(),
-        num_removed_single_pin_hyperedges, stable_construction);
+        hyperedge_weight.data(), hypernode_weight.data(),
+        num_removed_single_pin_hes, stable_construction);
     case STATIC_GRAPH:
       ENABLE_GRAPHS(
         return constructHypergraph<ds::StaticGraph>(
           num_hypernodes, num_hyperedges, hyperedges,
-          hyperedges_weight.data(), hypernodes_weight.data(),
-          num_removed_single_pin_hyperedges, stable_construction);
+          hyperedge_weight.data(), hypernode_weight.data(),
+          num_removed_single_pin_hes, stable_construction);
       )
     case DYNAMIC_HYPERGRAPH:
       ENABLE_HIGHEST_QUALITY(
         return constructHypergraph<ds::DynamicHypergraph>(
           num_hypernodes, num_hyperedges, hyperedges,
-          hyperedges_weight.data(), hypernodes_weight.data(),
-          num_removed_single_pin_hyperedges, stable_construction);
+          hyperedge_weight.data(), hypernode_weight.data(),
+          num_removed_single_pin_hes, stable_construction);
       )
     case DYNAMIC_GRAPH:
       ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(
         return constructHypergraph<ds::DynamicGraph>(
           num_hypernodes, num_hyperedges, hyperedges,
-          hyperedges_weight.data(), hypernodes_weight.data(),
-          num_removed_single_pin_hyperedges, stable_construction);
+          hyperedge_weight.data(), hypernode_weight.data(),
+          num_removed_single_pin_hes, stable_construction);
       )
     case COMPRESSED_HYPERGRAPH: // handled above
     case NULLPTR_HYPERGRAPH:
       return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
   }
-
   return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
+}
+
+template<typename Hypergraph>
+mt_kahypar_hypergraph_t constructGraph(const HypernodeID& num_nodes,
+                                       const HyperedgeID& num_edges,
+                                       const EdgeVector& edges,
+                                       const HyperedgeWeight* edge_weight,
+                                       const HypernodeWeight* node_weight,
+                                       const bool stable_construction) {
+  Hypergraph* graph = new Hypergraph();
+  *graph = Hypergraph::Factory::construct_from_graph_edges(num_nodes, num_edges, edges,
+    edge_weight, node_weight, stable_construction);
+  return mt_kahypar_hypergraph_t {
+    reinterpret_cast<mt_kahypar_hypergraph_s*>(graph), Hypergraph::TYPE };
+}
+
+mt_kahypar_hypergraph_t constructGraph(const mt_kahypar_hypergraph_type_t& type,
+                                            const HypernodeID& num_nodes,
+                                            const HyperedgeID& num_edges,
+                                            const EdgeVector& edges,
+                                            vec<HyperedgeWeight>& edge_weight,
+                                            vec<HypernodeWeight>& node_weight,
+                                            const bool stable_construction) {
+  switch ( type ) {
+    case STATIC_GRAPH:
+      ENABLE_GRAPHS(
+        return constructGraph<ds::StaticGraph>(
+          num_nodes, num_edges, edges,
+          edge_weight.data(), node_weight.data(), stable_construction);
+      )
+    case DYNAMIC_GRAPH:
+      ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(
+        return constructGraph<ds::DynamicGraph>(
+          num_nodes, num_edges, edges,
+          edge_weight.data(), node_weight.data(), stable_construction);
+      )
+    case STATIC_HYPERGRAPH:
+    case DYNAMIC_HYPERGRAPH:
+    case NULLPTR_HYPERGRAPH:
+      return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
+  }
+  return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
+}
+
+mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
+                                       const mt_kahypar_hypergraph_type_t& type,
+                                       const bool stable_construction,
+                                       const bool remove_single_pin_hes,
+                                       const bool print_warnings) {
+  HyperedgeID num_hyperedges = 0;
+  HypernodeID num_hypernodes = 0;
+  HyperedgeID num_removed_single_pin_hyperedges = 0;
+  HyperedgeVector hyperedges;
+  vec<HyperedgeWeight> hyperedges_weight;
+  vec<HypernodeWeight> hypernodes_weight;
+  readHypergraphFile(filename, num_hyperedges, num_hypernodes,
+                     num_removed_single_pin_hyperedges, hyperedges,
+                     hyperedges_weight, hypernodes_weight, remove_single_pin_hes, print_warnings);
+  return constructHypergraph(type, num_hypernodes, num_hyperedges, hyperedges,
+                             hyperedges_weight, hypernodes_weight,
+                             num_removed_single_pin_hyperedges, stable_construction);
 }
 
 mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
@@ -120,35 +180,18 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
   if (type == COMPRESSED_HYPERGRAPH) throw InvalidInputException("Compressed hypergraphs only support hMetis files.");
   HyperedgeID num_edges = 0;
   HypernodeID num_vertices = 0;
-  HyperedgeVector edges;
   vec<HyperedgeWeight> edges_weight;
   vec<HypernodeWeight> nodes_weight;
-  readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
-
-  switch ( type ) {
-    case STATIC_HYPERGRAPH:
-      return constructHypergraph<ds::StaticHypergraph>(
-        num_vertices, num_edges, edges,
-        edges_weight.data(), nodes_weight.data(), 0, stable_construction);
-    ENABLE_GRAPHS(case STATIC_GRAPH:
-      return constructHypergraph<ds::StaticGraph>(
-        num_vertices, num_edges, edges,
-        edges_weight.data(), nodes_weight.data(), 0, stable_construction);
-    )
-    ENABLE_HIGHEST_QUALITY(case DYNAMIC_HYPERGRAPH:
-      return constructHypergraph<ds::DynamicHypergraph>(
-        num_vertices, num_edges, edges,
-        edges_weight.data(), nodes_weight.data(), 0, stable_construction);
-    )
-    ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(case DYNAMIC_GRAPH:
-      return constructHypergraph<ds::DynamicGraph>(
-        num_vertices, num_edges, edges,
-        edges_weight.data(), nodes_weight.data(), 0, stable_construction);
-    )
-    case NULLPTR_HYPERGRAPH:
-      return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
-    default:
-      return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
+  if (type == STATIC_GRAPH || type == DYNAMIC_GRAPH) {
+    EdgeVector edges;
+    readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
+    return constructGraph(type, num_vertices, num_edges, edges,
+                          edges_weight, nodes_weight, stable_construction);
+  } else {
+    HyperedgeVector edges;
+    readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
+    return constructHypergraph(type, num_vertices, num_edges, edges,
+                               edges_weight, nodes_weight, 0, stable_construction);
   }
 }
 
@@ -159,13 +202,14 @@ mt_kahypar_hypergraph_t readInputFile(const std::string& filename,
                                       const InstanceType& instance,
                                       const FileFormat& format,
                                       const bool stable_construction,
-                                      const bool remove_single_pin_hes) {
+                                      const bool remove_single_pin_hes,
+                                      const bool print_warnings) {
   mt_kahypar_hypergraph_type_t type = to_hypergraph_c_type(preset, instance);
   switch ( format ) {
     case FileFormat::hMetis: return readHMetisFile(
-      filename, type, stable_construction, remove_single_pin_hes);
+      filename, type, stable_construction, remove_single_pin_hes, print_warnings);
     case FileFormat::Metis: return readMetisFile(
-      filename, type, stable_construction);
+      filename, type, stable_construction, print_warnings);
   }
   return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
 }
@@ -174,14 +218,15 @@ template<typename Hypergraph>
 Hypergraph readInputFile(const std::string& filename,
                          const FileFormat& format,
                          const bool stable_construction,
-                         const bool remove_single_pin_hes) {
+                         const bool remove_single_pin_hes,
+                         const bool print_warnings) {
   mt_kahypar_hypergraph_t hypergraph { nullptr, NULLPTR_HYPERGRAPH };
   switch ( format ) {
     case FileFormat::hMetis: hypergraph = readHMetisFile(
-      filename, Hypergraph::TYPE, stable_construction, remove_single_pin_hes);
+      filename, Hypergraph::TYPE, stable_construction, remove_single_pin_hes, print_warnings);
       break;
     case FileFormat::Metis: hypergraph = readMetisFile(
-      filename, Hypergraph::TYPE, stable_construction);
+      filename, Hypergraph::TYPE, stable_construction, print_warnings);
   }
   return std::move(utils::cast<Hypergraph>(hypergraph));
 }
@@ -277,7 +322,8 @@ namespace {
   #define READ_INPUT_FILE(X) X readInputFile(const std::string& filename,       \
                                              const FileFormat& format,          \
                                              const bool stable_construction,    \
-                                             const bool remove_single_pin_hes)
+                                             const bool remove_single_pin_hes,  \
+                                             const bool logging)
 }
 
 INSTANTIATE_FUNC_WITH_HYPERGRAPHS(READ_INPUT_FILE)
@@ -286,7 +332,8 @@ INSTANTIATE_FUNC_WITH_HYPERGRAPHS(READ_INPUT_FILE)
 template ds::StaticGraph readInputFile(const std::string& filename,
                                        const FileFormat& format,
                                        const bool stable_construction,
-                                       const bool remove_single_pin_hes);
+                                       const bool remove_single_pin_hes,
+                                       const bool logging);
 #endif
 
 }  // namespace io

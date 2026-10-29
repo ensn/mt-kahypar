@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <bit>
 #include <cmath>
 #include <limits>
 
@@ -42,8 +43,8 @@ class StaticBitset;
 class Bitset {
 
   using Block = uint64_t;
-  static constexpr int BITS_PER_BLOCK = std::numeric_limits<Block>::digits;
-  static_assert(__builtin_popcountll(BITS_PER_BLOCK) == 1);
+  static constexpr Block BITS_PER_BLOCK = std::numeric_limits<Block>::digits;
+  static_assert(std::popcount(BITS_PER_BLOCK) == 1);
   static constexpr Block MOD_MASK = BITS_PER_BLOCK - 1;
   static constexpr Block DIV_SHIFT = utils::log2(BITS_PER_BLOCK);
 
@@ -86,7 +87,7 @@ class Bitset {
     std::memcpy(_bitset.data(), blocks, sizeof(Block) * num_blocks);
   }
 
-  bool isSet(const size_t pos) {
+  bool isSet(const size_t pos) const {
     ASSERT(pos < _size);
     const size_t block_idx = pos >> DIV_SHIFT; // pos / BITS_PER_BLOCK;
     const size_t idx = pos & MOD_MASK; // pos % BITS_PER_BLOCK;

@@ -278,6 +278,11 @@ private:
     return _hg->numRemovedHypernodes();
   }
 
+  // ! Max weight of removed degree zero vertex
+  HypernodeWeight maxWeightOfRemovedDegreeZeroNode() const {
+    return _hg->maxWeightOfRemovedDegreeZeroNode();
+  }
+
   // ! Initial number of hyperedges
   HyperedgeID initialNumEdges() const {
     return _hg->initialNumEdges();
@@ -432,7 +437,7 @@ private:
   }
 
   // ! Weight of a hyperedge
-  HypernodeWeight edgeWeight(const HyperedgeID e) const {
+  HyperedgeWeight edgeWeight(const HyperedgeID e) const {
     return _hg->edgeWeight(e);
   }
 
@@ -495,6 +500,14 @@ private:
 
   void restoreLargeEdge(const HyperedgeID& he) {
     _hg->restoreLargeEdge(he);
+  }
+
+  /*!
+   * Restores a single pin hyperedge previously removed from the hypergraph.
+   */
+  void restoreSinglePinEdge(const HyperedgeID&) {
+    throw UnsupportedOperationException(
+      "restoreSinglePinEdge is not supported in partitioned graph");
   }
 
   template<typename GainCache>
@@ -926,10 +939,7 @@ private:
         if (partID(source) == block && partID(target) == block && source < target) {
           ASSERT(he_mapping[edge] < num_edges);
           edge_weight[he_mapping[edge]] = edgeWeight(edge);
-          for (const HypernodeID& pin : pins(edge)) {
-            unused(pin);
-            edge_vector[he_mapping[edge]] = {node_mapping[source], node_mapping[target]};
-          }
+          edge_vector[he_mapping[edge]] = {node_mapping[source], node_mapping[target]};
         }
       });
     }, [&] {
@@ -1142,7 +1152,7 @@ private:
         // small hack to only set this when assertions are enabled
         ASSERT(_edge_sync_is_dirty = true);
       }
-      __atomic_store_n(&_part_ids[u], to, __ATOMIC_RELAXED);
+      std::atomic_ref(_part_ids[u]).store(to, std::memory_order::relaxed);
       DBG << "Done changing node part: " << V(u) << " >>>";
       return true;
     } else {
@@ -1158,7 +1168,9 @@ private:
         parallel::scalable_vector<HypernodeWeight> part_weight_deltas(_k, 0);
         for (HypernodeID node = r.begin(); node < r.end(); ++node) {
           if (nodeIsEnabled(node)) {
-            part_weight_deltas[partID(node)] += nodeWeight(node);
+            const PartitionID part = partID(node);
+            ASSERT(part >= 0 && part < _k);
+            part_weight_deltas[part] += nodeWeight(node);
           }
         }
         for (PartitionID p = 0; p < _k; ++p) {
@@ -1183,7 +1195,7 @@ private:
                                     const NotificationFunc& notify_func) {
     const HyperedgeID unique_id = uniqueEdgeID(edge);
     const HypernodeID v = edgeTarget(edge);
-    PartitionID block_of_v = __atomic_load_n(&_part_ids[v], __ATOMIC_RELAXED);
+    PartitionID block_of_v = std::atomic_ref(_part_ids[v]).load(std::memory_order::relaxed);
     EdgeMove& edge_move = _edge_sync[unique_id];
 
     // Note: It is important that `edge_move` tracks the block of both nodes.

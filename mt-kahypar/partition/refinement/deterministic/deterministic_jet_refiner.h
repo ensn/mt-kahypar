@@ -28,6 +28,8 @@
 
 #pragma once
 
+#include "kahypar-resources/datastructure/fast_reset_flag_array.h"
+
 #include "mt-kahypar/datastructures/streaming_vector.h"
 #include "mt-kahypar/datastructures/thread_safe_fast_reset_flag_array.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
@@ -67,7 +69,6 @@ public:
     _current_k(context.partition.k),
     _top_level_num_nodes(num_hypernodes),
     _current_partition_is_best(true),
-    _was_already_balanced(false),
     _negative_gain_factor(0.0),
     _active_nodes(),
     _tmp_active_nodes(),
@@ -114,8 +115,6 @@ private:
 
   HyperedgeWeight calculateGainDelta(PartitionedHypergraph& phg) const;
 
-  void recomputePenalties(const PartitionedHypergraph& hypergraph, bool did_rebalance);
-
   bool arePotentialMovesToOtherParts(const PartitionedHypergraph& hypergraph, const parallel::scalable_vector<HypernodeID>& moves);
 
   bool noInvalidPartitions(const PartitionedHypergraph& phg, const parallel::scalable_vector<PartitionID>& parts);
@@ -126,7 +125,6 @@ private:
   PartitionID _current_k;
   HypernodeID _top_level_num_nodes;
   bool _current_partition_is_best;
-  bool _was_already_balanced;
   double _negative_gain_factor;
   ActiveNodes _active_nodes;
   ds::StreamingVector<HypernodeID> _tmp_active_nodes;

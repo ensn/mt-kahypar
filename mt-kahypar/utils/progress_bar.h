@@ -36,9 +36,9 @@
 #include <windows.h>
 #else
 #include <sys/ioctl.h>
+#include <unistd.h>
 #endif
 #include <stdio.h>
-#include <unistd.h>
 
 #include "mt-kahypar/macros.h"
 
@@ -63,11 +63,11 @@ class ProgressBar {
     #if _WIN32
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-    _progress_bar_size = (csbi.srWindow.Right - csbi.srWindow.Left + 1)/2;
+    _progress_bar_size = std::min((csbi.srWindow.Right - csbi.srWindow.Left + 1) / 2, 75);
     #else
     struct winsize w;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-    _progress_bar_size = w.ws_col / 2;
+    _progress_bar_size =  std::min(w.ws_col / 2, 75);
     #endif
     display_progress();
   }
@@ -110,7 +110,7 @@ class ProgressBar {
   }
 
   void addToObjective(const int64_t delta) {
-    __atomic_fetch_add(&_objective, delta, __ATOMIC_RELAXED);
+    std::atomic_ref(_objective).fetch_add(delta, std::memory_order::relaxed);
   }
 
  private:
@@ -141,8 +141,7 @@ class ProgressBar {
       }
       std::cout << " ] ";
 
-      std::cout << "(" << progress << "% - "
-                << current_count << "/" << _expected_count << ") ";
+      std::cout << "(" << progress << "%) ";
 
       size_t time = std::chrono::duration<double>(end - _start).count();
       display_time(time);

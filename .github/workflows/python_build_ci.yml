@@ -15,12 +15,12 @@ jobs:
       TBB_INSTALL_DIR: /tmp/tbb_build
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install libtbb-dev libhwloc-dev libboost-program-options-dev
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev libhwloc-dev
           python3 -m pip install cibuildwheel>=2.22.0
 
       - name: Build Python Wheels
@@ -33,49 +33,47 @@ jobs:
           rm -rf configure_python
           python3 -m cibuildwheel --output-dir wheels
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cibw-wheels-ubuntu-24.04
           path: ./wheels/*.whl
 
 
-  # ARM is disabled since the python test fails on the Github ARM runner (which I couldn't reproduce yet)
+  package_linux_arm:
+    name: Python Package Linux ARM
 
-  # package_linux_arm:
-  #   name: Python Package Linux ARM
+    runs-on: ubuntu-24.04-arm
+    env:
+      CI_ACTIVE : 1
+      TBB_INSTALL_DIR: /tmp/tbb_build
 
-  #   runs-on: ubuntu-24.04-arm
-  #   env:
-  #     CI_ACTIVE : 1
-  #     TBB_INSTALL_DIR: /tmp/tbb_build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
 
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-python@v5
+      - name: Install Dependencies
+        run: |
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev libhwloc-dev
+          python3 -m pip install cibuildwheel>=2.22.0
 
-  #     - name: Install Dependencies
-  #       run: |
-  #         sudo apt-get install libtbb-dev libhwloc-dev libboost-program-options-dev
-  #         python3 -m pip install cibuildwheel>=2.22.0
+      - name: Build Python Wheels
+        env:
+          CIBW_ARCHS_LINUX: aarch64
+          CIBW_BUILD: cp3*-manylinux*
+        run: |
+          # run cmake to create pyproject.toml from pyproject.toml.in
+          cmake -B configure_python --preset=minimal -DKAHYPAR_SETUP_PYTHON=On -DKAHYPAR_TBB_DIR=$TBB_INSTALL_DIR -DKAHYPAR_DISABLE_HWLOC=Off
+          rm -rf configure_python
+          python3 -m cibuildwheel --output-dir wheels
 
-  #     - name: Build Python Wheels
-  #       env:
-  #         CIBW_ARCHS_LINUX: aarch64
-  #         CIBW_BUILD: cp3*-manylinux*
-  #       run: |
-  #         # run cmake to create pyproject.toml from pyproject.toml.in
-  #         cmake -B configure_python --preset=minimal -DKAHYPAR_SETUP_PYTHON=On -DKAHYPAR_TBB_DIR=$TBB_INSTALL_DIR -DKAHYPAR_DISABLE_HWLOC=Off
-  #         rm -rf configure_python
-  #         python3 -m cibuildwheel --output-dir wheels
-
-  #     - uses: actions/upload-artifact@v4
-  #       with:
-  #         name: cibw-wheels-ubuntu-24.04-arm
-  #         path: ./wheels/*.whl
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cibw-wheels-ubuntu-24.04-arm
+          path: ./wheels/*.whl
 
 
-  package_macos:
-    name: Python Package MacOS
+  package_macos_arm:
+    name: Python Package MacOS Arm
 
     runs-on: macos-latest
     env:
@@ -83,16 +81,16 @@ jobs:
       TBB_INSTALL_DIR: /tmp/tbb_build
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
 
       - name: Install Dependencies
         run: |
-          brew install tbb boost pipx
+          brew install tbb pipx
 
       - name: Build Python Wheels
         env:
-          CIBW_ARCHS_MACOS: x86_64 arm64
+          CIBW_ARCHS_MACOS: arm64
           CIBW_BUILD: cp3*-macos*
           # TBB doesn't compile on older MacOS than 10.13
           MACOSX_DEPLOYMENT_TARGET: 10.13
@@ -102,21 +100,103 @@ jobs:
           rm -rf configure_python
           pipx run cibuildwheel --output-dir wheels
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: cibw-wheels-macos
+          name: cibw-wheels-macos-arm
           path: ./wheels/*.whl
+
+
+  package_macos_intel:
+    name: Python Package MacOS Intel
+
+    runs-on: macos-15-intel
+    env:
+      CI_ACTIVE : 1
+      TBB_INSTALL_DIR: /tmp/tbb_build
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+
+      - name: Install Dependencies
+        run: |
+          brew install tbb pipx
+
+      - name: Build Python Wheels
+        env:
+          CIBW_ARCHS_MACOS: x86_64
+          CIBW_BUILD: cp3*-macos*
+          # TBB doesn't compile on older MacOS than 10.13
+          MACOSX_DEPLOYMENT_TARGET: 10.13
+        run: |
+          # run cmake to create pyproject.toml from pyproject.toml.in
+          cmake -B configure_python --preset=minimal -DKAHYPAR_SETUP_PYTHON=On -DKAHYPAR_TBB_DIR=$TBB_INSTALL_DIR -DKAHYPAR_DISABLE_HWLOC=On
+          rm -rf configure_python
+          pipx run cibuildwheel --output-dir wheels
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cibw-wheels-macos-x86
+          path: ./wheels/*.whl
+
+
+  package_windows:
+    name: Python Package Windows
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+        include:
+          - os: windows-latest
+            arch: "x64"
+            CIBW-arch: "AMD64"
+          - os: windows-11-arm
+            arch: "arm64"
+            CIBW-arch: "ARM64"
+    runs-on: ${{ matrix.os }}
+    env:
+      CI_ACTIVE : 1
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install "cibuildwheel>=2.22.0"
+
+      - name: Setup MSVC
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Build Python Wheels
+        shell: cmd
+        env:
+          CIBW_ARCHS_WINDOWS: ${{ matrix.CIBW-arch }}
+          CIBW_BUILD: cp3*-win*
+          TBB_INSTALL_DIR: ${{ runner.temp }}/tbb_build
+        run: |
+          # run cmake to create pyproject.toml from pyproject.toml.in
+          cmake -B configure_python --preset=minimal -DKAHYPAR_SETUP_PYTHON=On -DKAHYPAR_TBB_DIR=%TBB_INSTALL_DIR%
+          rmdir /s /q configure_python
+          python -m cibuildwheel --output-dir wheels
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cibw-wheels-${{ matrix.os }}
+          path: .\wheels\*.whl
 
 
   build_sdist:
     name: Build Source Distribution
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install libtbb-dev libhwloc-dev libboost-program-options-dev
+          sudo apt-get -y update && sudo apt-get -y install libtbb-dev libhwloc-dev
 
       - name: Build sdist
         run: |
@@ -125,20 +205,20 @@ jobs:
           rm -rf configure_python
           pipx run build --sdist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cibw-sdist
           path: dist/*.tar.gz
 
   upload_pypi:
-    needs: [package_linux_x86, package_macos, build_sdist]  # package_linux_arm
+    needs: [package_linux_x86, package_linux_arm, package_macos_arm, package_macos_intel, package_windows, build_sdist]
     runs-on: ubuntu-24.04
     environment: pypi
     permissions:
       id-token: write
     steps:
       - name: Collect Python Packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           # unpacks all CIBW artifacts into dist/
           pattern: cibw-*

@@ -27,14 +27,11 @@
 
 #pragma once
 
-#include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/coarsening/i_coarsener.h"
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/initial_partitioning/i_initial_partitioner.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/i_rebalancer.h"
-#include "mt-kahypar/partition/refinement/flows/i_flow_refiner.h"
-#include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/i_fm_strategy.h"
 #include "mt-kahypar/partition/refinement/gains/gain_cache_ptr.h"
 #include "mt-kahypar/partition/thread_safe_abstract_factory.h"
@@ -45,6 +42,7 @@ typedef struct ip_data_container_s ip_data_container_t;
 
 using CoarsenerFactory = mt_kahypar::ThreadSafeFactory<CoarseningAlgorithm,
                                            ICoarsener* (*)(mt_kahypar_hypergraph_t, const Context&, uncoarsening_data_t*)>;
+
 using InitialPartitionerFactory = mt_kahypar::ThreadSafeFactory<InitialPartitioningAlgorithm,
   IInitialPartitioner* (*)(const InitialPartitioningAlgorithm, ip_data_container_t*, const Context&, const int, const int)>;
 
@@ -64,6 +62,4 @@ using FlowSchedulerFactory = mt_kahypar::ThreadSafeFactory<FlowAlgorithm,
 
 using RebalancerFactory = mt_kahypar::ThreadSafeFactory<RebalancingAlgorithm, IRebalancer* (*)(HypernodeID, const Context&, gain_cache_t)>;
 
-using FlowRefinementFactory = mt_kahypar::ThreadSafeFactory<FlowAlgorithm,
-                              IFlowRefiner* (*)(const HyperedgeID, const Context&)>;
 }  // namespace mt_kahypar

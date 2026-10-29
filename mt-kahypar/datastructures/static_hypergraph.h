@@ -28,6 +28,8 @@
 #pragma once
 
 
+#include <functional>
+
 #include <tbb/parallel_for.h>
 
 #include "include/mtkahypartypes.h"
@@ -409,7 +411,7 @@ class StaticHypergraph {
   explicit StaticHypergraph() :
     _num_hypernodes(0),
     _num_removed_hypernodes(0),
-    _removed_degree_zero_hn_weight(0),
+    _max_removed_degree_zero_hn_weight(0),
     _num_hyperedges(0),
     _num_removed_hyperedges(0),
     _max_edge_size(0),
@@ -430,7 +432,7 @@ class StaticHypergraph {
   StaticHypergraph(StaticHypergraph&& other) :
     _num_hypernodes(other._num_hypernodes),
     _num_removed_hypernodes(other._num_removed_hypernodes),
-    _removed_degree_zero_hn_weight(other._removed_degree_zero_hn_weight),
+    _max_removed_degree_zero_hn_weight(other._max_removed_degree_zero_hn_weight),
     _num_hyperedges(other._num_hyperedges),
     _num_removed_hyperedges(other._num_removed_hyperedges),
     _max_edge_size(other._max_edge_size),
@@ -451,7 +453,7 @@ class StaticHypergraph {
   StaticHypergraph & operator= (StaticHypergraph&& other) {
     _num_hypernodes = other._num_hypernodes;
     _num_removed_hypernodes = other._num_removed_hypernodes;
-    _removed_degree_zero_hn_weight = other._removed_degree_zero_hn_weight;
+    _max_removed_degree_zero_hn_weight = other._max_removed_degree_zero_hn_weight;
     _num_hyperedges = other._num_hyperedges;
     _num_removed_hyperedges = other._num_removed_hyperedges;
     _max_edge_size = other._max_edge_size;
@@ -490,9 +492,9 @@ class StaticHypergraph {
     return _num_removed_hypernodes;
   }
 
-  // ! Weight of removed degree zero vertics
-  HypernodeWeight weightOfRemovedDegreeZeroVertices() const {
-    return _removed_degree_zero_hn_weight;
+  // ! Max weight of removed degree zero vertex
+  HypernodeWeight maxWeightOfRemovedDegreeZeroNode() const {
+    return _max_removed_degree_zero_hn_weight;
   }
 
   // ! Initial number of hyperedges
@@ -627,21 +629,22 @@ class StaticHypergraph {
   // ! Removes a degree zero hypernode
   void removeDegreeZeroHypernode(const HypernodeID u) {
     ASSERT(nodeDegree(u) == 0);
-    _removed_degree_zero_hn_weight += nodeWeight(u);
     removeHypernode(u);
+    _max_removed_degree_zero_hn_weight =
+      std::max(_max_removed_degree_zero_hn_weight, nodeWeight(u));
   }
 
   // ! Restores a degree zero hypernode
   void restoreDegreeZeroHypernode(const HypernodeID u) {
     hypernode(u).enable();
     ASSERT(nodeDegree(u) == 0);
-    _removed_degree_zero_hn_weight -= nodeWeight(u);
+    _max_removed_degree_zero_hn_weight = 0;
   }
 
   // ####################### Hyperedge Information #######################
 
   // ! Weight of a hyperedge
-  HypernodeWeight edgeWeight(const HyperedgeID e) const {
+  HyperedgeWeight edgeWeight(const HyperedgeID e) const {
     ASSERT(!hyperedge(e).isDisabled(), "Hyperedge" << e << "is disabled");
     return hyperedge(e).weight();
   }
@@ -785,6 +788,17 @@ class StaticHypergraph {
     }
     ++_num_removed_hyperedges;
     disableHyperedge(he);
+  }
+
+  /*!
+   * Restores a hyperedge previously removed from the hypergraph.
+   */
+  void restoreEdge(const HyperedgeID he) {
+    ASSERT(!edgeIsEnabled(he), "Hyperedge" << he << "is enabled");
+    enableHyperedge(he);
+    for ( const HypernodeID& pin : pins(he) ) {
+      insertIncidentEdgeToHypernode(he, pin);
+    }
   }
 
   /*!
@@ -1001,8 +1015,8 @@ class StaticHypergraph {
   HypernodeID _num_hypernodes;
   // ! Number of removed hypernodes
   HypernodeID _num_removed_hypernodes;
-  // ! Number of removed degree zero hypernodes
-  HypernodeWeight _removed_degree_zero_hn_weight;
+  // ! Maximum weight of all removed degree zero nodes
+  HypernodeWeight _max_removed_degree_zero_hn_weight;
   // ! Number of hyperedges
   HyperedgeID _num_hyperedges;
   // ! Number of removed hyperedges

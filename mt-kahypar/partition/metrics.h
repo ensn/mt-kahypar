@@ -27,13 +27,36 @@
 
 #pragma once
 
+#include <iostream>
+#include <limits>
+
 #include "mt-kahypar/partition/context.h"
 
 namespace mt_kahypar {
 
+struct BalanceMetrics {
+  double imbalance_value = std::numeric_limits<double>::max();
+  bool violates_balance = true;
+  bool violates_non_empty_blocks = true;
+
+  bool isValidPartition() const;
+
+  bool isBetter(const BalanceMetrics& other) const;
+
+  bool isEqual(const BalanceMetrics& other) const;
+
+  bool operator==(const BalanceMetrics& other) const;
+};
+
+std::ostream& operator<< (std::ostream& os, const BalanceMetrics& imbalance);
+
 struct Metrics {
   HyperedgeWeight quality;
-  double imbalance;
+  BalanceMetrics imbalance;
+
+  bool isBetter(const Metrics& other) const;
+
+  bool isEqual(const Metrics& other) const;
 };
 
 namespace metrics {
@@ -55,10 +78,38 @@ HyperedgeWeight contribution(const PartitionedHypergraph& hg,
                              const Objective objective);
 
 template<typename PartitionedHypergraph>
-bool isBalanced(const PartitionedHypergraph& phg, const Context& context);
+bool isValidPartition(const PartitionedHypergraph& phg, const Context& context);
 
 template<typename PartitionedHypergraph>
-double imbalance(const PartitionedHypergraph& hypergraph, const Context& context);
+BalanceMetrics imbalance(const PartitionedHypergraph& hypergraph, const Context& context);
+
+template<typename PartitionedHypergraph>
+BalanceMetrics imbalance(const PartitionedHypergraph& hypergraph,
+                         const Context& context,
+                         const std::vector<HypernodeWeight>& max_part_weights);
+
+template<typename PartitionedHypergraph>
+BalanceMetrics imbalance(const PartitionedHypergraph& hypergraph,
+                         const Context& context,
+                         const vec<HypernodeWeight>& part_weights,
+                         const std::vector<HypernodeWeight>& max_part_weights);
+
+template<typename PartitionedHypergraph>
+BalanceMetrics onlyImbalance(const PartitionedHypergraph& hypergraph, const Context& context) {
+  // cheaper variant that does not consider any constraints other than balance
+  double max_balance = 0.0;
+  bool violates_balance = false;
+  for (PartitionID i = 0; i < context.partition.k; ++i) {
+    const HypernodeWeight part_weight = hypergraph.partWeight(i);
+    const double balance_i = (part_weight
+            / static_cast<double>(context.partition.perfect_balance_part_weights[i]));
+    max_balance = std::max(max_balance, balance_i);
+    if (part_weight > context.partition.max_part_weights[i]) {
+      violates_balance = true;
+    }
+  }
+  return BalanceMetrics{max_balance - 1.0, violates_balance, false};
+}
 
 template<typename PartitionedHypergraph>
 double approximationFactorForProcessMapping(const PartitionedHypergraph& hypergraph, const Context& context);

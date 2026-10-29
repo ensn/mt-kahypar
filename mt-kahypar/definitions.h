@@ -93,6 +93,13 @@ using TypeTraitsList = kahypar::meta::Typelist<StaticHypergraphTypeTraits,
                                                ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(COMMA DynamicGraphTypeTraits)
                                                ENABLE_LARGE_K(COMMA LargeKHypergraphTypeTraits)>;
 
+using MultilevelTypeTraitsList = kahypar::meta::Typelist<StaticHypergraphTypeTraits
+                                               ENABLE_GRAPHS(COMMA StaticGraphTypeTraits)
+                                               ENABLE_LARGE_K(COMMA LargeKHypergraphTypeTraits)>;
+
+using NLevelTypeTraitsList = kahypar::meta::Typelist<ENABLE_HIGHEST_QUALITY(DynamicHypergraphTypeTraits)
+                                               ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(COMMA DynamicGraphTypeTraits)>;
+
 #define INSTANTIATE_FUNC_WITH_HYPERGRAPHS(FUNC)                      \
   template FUNC(ds::StaticHypergraph);                               \
   template FUNC(ds::CompressedHypergraph);                           \
@@ -130,6 +137,10 @@ using TypeTraitsList = kahypar::meta::Typelist<StaticHypergraphTypeTraits,
   ENABLE_HIGHEST_QUALITY(template class C<DynamicHypergraphTypeTraits>;)     \
   ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template class C<DynamicGraphTypeTraits>;)\
   ENABLE_LARGE_K(template class C<LargeKHypergraphTypeTraits>;)
+
+#define INSTANTIATE_CLASS_WITH_NLEVEL_TYPE_TRAITS(C)                            \
+  ENABLE_HIGHEST_QUALITY(template class C<DynamicHypergraphTypeTraits>;)        \
+  ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template class C<DynamicGraphTypeTraits>;)
 
 
 using HighResClockTimepoint = std::chrono::time_point<std::chrono::high_resolution_clock>;

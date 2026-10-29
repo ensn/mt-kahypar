@@ -91,7 +91,7 @@ namespace rb {
     b_context.partition.objective = Objective::cut;
     b_context.partition.gain_policy = Hypergraph::is_graph ?
       GainPolicy::cut_for_graphs : GainPolicy::cut;
-    b_context.partition.verbose_output = false;
+    b_context.partition.enable_logging = false;
     b_context.initial_partitioning.mode = Mode::direct;
     if (context.partition.mode == Mode::direct) {
       b_context.type = ContextType::initial_partitioning;
@@ -107,7 +107,8 @@ namespace rb {
       const HypernodeWeight max_part_weights_sum = std::accumulate(context.partition.max_part_weights.cbegin(),
                                                                   context.partition.max_part_weights.cend(), 0);
       const double weight_fraction = total_weight / static_cast<double>(max_part_weights_sum);
-      ASSERT(weight_fraction <= 1.0);
+      // assertion doesn't hold if previous bipartitions are imbalanced...
+      // ASSERT(weight_fraction <= 1.0);
       b_context.partition.perfect_balance_part_weights.clear();
       b_context.partition.max_part_weights.clear();
       HypernodeWeight perfect_weight_p0 = 0;
@@ -410,7 +411,7 @@ void RecursiveBipartitioning<TypeTraits>::partition(PartitionedHypergraph& hyper
       GainPolicy::cut_for_graphs : GainPolicy::km1;
   }
   if ( context.type == ContextType::initial_partitioning ) {
-    rb_context.partition.verbose_output = false;
+    rb_context.partition.enable_logging = false;
   }
 
   vec<uint8_t> already_cut(rb::usesAdaptiveWeightOfNonCutEdges(context) ?

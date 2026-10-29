@@ -12,7 +12,8 @@ Table of Contents
    * [Installing Mt-KaHyPar](#installing-mt-kahypar)
    * [Building Mt-KaHyPar from Source](#building-mt-kahypar-from-source)
    * [Running Mt-KaHyPar](#running-mt-kahypar)
-   * [Using Mt-KaHyPar as a library](#using-mt-kahypar-as-a-library)
+   * [The C Library](#the-c-library)
+   * [The Python Library](#the-python-library)
    * [Supported Objective Functions](#supported-objective-functions)
    * [Improving Compile Times](#improving-compile-times)
    * [Licensing](#licensing)
@@ -41,7 +42,7 @@ Features
 Besides its fast and high-quality partitioning algorithm, Mt-KaHyPar provides many other useful features:
 
 - **Scalability**: Mt-KaHyPar has excellent scaling behaviour (up to 25 with 64 threads), while increasing the number of threads does not adversely affect the solution quality.
-- **Deterministic Partitioning**: Mt-KaHyPar offers a deterministic partitioning algorithm, ensuring consistent solutions for the same input and random seed.
+- **Deterministic Partitioning**: Mt-KaHyPar offers a high-quality deterministic partitioning algorithm, ensuring consistent solutions for the same input and random seed.
 - **Large K Partitioning**: We provide a partitioning configuration for partitioning (hyper)graphs into a large number of blocks (e.g., k > 1024).
 - **Graph Partitioning**: Mt-KaHyPar includes optimized data structures for graph partitioning, achieving a speedup by a factor of two for plain graphs.
 - **Objective Functions**: Mt-KaHyPar can optimize the cut-net, connectivity, and sum-of-external-degrees metric (for more details, see [Supported Objective Functions](#supported-objective-functions))
@@ -54,7 +55,7 @@ Besides its fast and high-quality partitioning algorithm, Mt-KaHyPar provides ma
 Installing Mt-KaHyPar
 -----------
 
-For Linux (x86) and MacOS, the [Mt-KaHyPar Python package](https://pypi.org/project/mtkahypar/) can be installed via pip:
+For Linux, MacOS, and Windows, the [Mt-KaHyPar Python package](https://pypi.org/project/mtkahypar/) can be installed via pip:
 
     pip install mtkahypar
 
@@ -68,83 +69,68 @@ Building Mt-KaHyPar from Source
 Mt-KaHyPar requires:
 
  - A 64-bit Linux, MacOS, or Windows operating system.
- - A modern, C++17-ready compiler such as `g++` version 7 or higher, `clang` version 11.0.3 or higher, or `MinGW` compiler on Windows.
- - The [cmake][cmake] build system (>= 3.21).
- - The [Boost - Program Options][Boost.Program_options] library and the boost header files (>= 1.48).
-   If you don't want to install boost by yourself, you can add the `-DKAHYPAR_DOWNLOAD_BOOST=On` flag
-   to the cmake command to download, extract, and build the necessary dependencies automatically.
+ - A modern, C++20-ready compiler such as `g++` version 10 or higher, `clang` version 11.0.3 (`libc++` version 19) or higher, or `MSVC` version 19.28 compiler on Windows.
+ - The [cmake][cmake] build system (>= 3.26).
  - The [Intel Thread Building Blocks][tbb] library (TBB, minimum required version is OneTBB 2021.5.0).
-   If you don't want to install TBB by yourself, you can add the `-DKAHYPAR_DOWNLOAD_TBB=On` flag (only available on Linux)
+   If you don't want to install TBB by yourself, you can add the `-DKAHYPAR_DOWNLOAD_TBB=On` flag
    to the cmake command to download oneTBB and extract the necessary dependencies automatically.
- - The [Portable Hardware Locality][hwloc] library (hwloc)
+ - The [Portable Hardware Locality][hwloc] library (hwloc). This dependency is not strictly necessary,
+   you can add the `-DKAHYPAR_DISABLE_HWLOC=On` flag to remove it.
 
 ### Linux
 
-The following command will install most of the required dependencies on a Ubuntu machine:
+The following command will install the required dependencies on a Ubuntu machine:
 
-    sudo apt-get install libtbb-dev libhwloc-dev libboost-program-options-dev
+    sudo apt-get install libtbb-dev libhwloc-dev
 
 ### MacOS
 
-The following command will install most of the required dependencies on a MacOS machine:
+The following command will install the required dependencies on a MacOS machine:
 
-    brew install tbb boost hwloc
+    brew install tbb hwloc
 
 ### Windows
 
-The following instructions set up the environment used to build Mt-KaHyPar on Windows machines:
-
-  1. Download and install [MSYS2][MSYS2] from the official website (https://www.msys2.org/).
-  2. Launch the `MSYS2 MinGW x64` terminal.
-  3. Update the package manager database by running the following command:
-
-    pacman -Syu
-
-  4. The following command will then install all required dependencies:
-
-    pacman -S make mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc mingw-w64-x86_64-python3 mingw-w64-x86_64-boost mingw-w64-x86_64-tbb
+No manual installation of dependencies required.
+Build within a Developer Command Prompt, or ensure that MSVC is discoverable by `cmake`.
 
 ### Build Commands
 
 To build Mt-KaHyPar, use the following commands:
 
-1. Clone the repository including submodules:
-
-   ```git clone https://github.com/kahypar/mt-kahypar.git```
-
-2. Create a build directory: `mkdir build && cd build`
-3. *Only on Windows machines: `export CMAKE_GENERATOR="MSYS Makefiles"`*
-3. Run cmake: `cmake .. --preset=<default/python/dev>`
-4. Run make: `make MtKaHyPar -j`
+1. Clone the repository: `git clone https://github.com/kahypar/mt-kahypar.git`
+2. Inside the repository, run cmake: `cmake -B build --preset=<default/python/dev>`
+3. Build: `cmake --build build --target MtKaHyPar -j 4`
 
 The build produces the executable `MtKaHyPar`, which can be found in `build/mt-kahypar/application/`.
 
 As a user of Mt-KaHyPar, the `default` cmake preset is appropriate (or `python` for installing the Python interface).
-If you work on Mt-KaHyPar or want to run benchmarks, use the `dev` preset.
-
-Please note that Mt-KaHyPar was primarily tested and evaluated on Linux machines. While a Windows build has been provided and tested on `MSYS2` using `pacman` to install the required dependencies, we cannot provide any performance guarantees or ensure that the Windows version is free of bugs. We are happy to accept contributions to improve Windows support.
+If you work on Mt-KaHyPar or want to run benchmarks, use the `dev` or `minimal-dev` preset.
 
 Running Mt-KaHyPar
 -----------
 
-To partition a **hypergraph** with our default configuration, you can use the following command:
+To partition a **hypergraph** with our default configuration, use the following command:
 
-    ./mt-kahypar/application/MtKaHyPar -h <path-to-hgr> --preset-type=default -t <# threads> -k <# blocks> -e <imbalance (e.g. 0.03)> -o km1
+    ./MtKaHyPar -h <path-to-hgr> --preset-type=default -t <# threads> -k <# blocks> -e <imbalance (e.g. 0.03)> -o km1
+
+Available options are described in more detail below. You can also use `--help` to print a summary of the most important options.
 
 ### Partitioning Configurations
 
-Mt-KaHyPar provides several partitioning configurations with different time-quality trade-offs. The configurations are stored in `ini` files located in the `config` folder. However, we recommend using the `--preset-type` command line parameter to run Mt-KaHyPar with a specific partitioning configuration:
+Mt-KaHyPar provides several partitioning configurations with different time-quality trade-offs. The configurations are stored in `ini` files located in the `config` folder. However, we recommend using the `--preset-type` parameter:
 
-    --preset-type=<large_k/deterministic/default/quality/highest_quality>
+    --preset-type=<default/quality/highest_quality/deterministic/deterministic_quality/large_k>
 
-- `large_k`: configuration for partitioning (hyper)graphs into a large number of blocks (e.g. >= 1024 blocks)
-- `deterministic`: configuration for deterministic partitioning
 - `default`: computes good partitions very fast
 - `quality`: computes high-quality partitions (uses flow-based refinement)
 - `highest_quality`: highest-quality configuration (uses n-level coarsening and flow-based refinement)
+- `deterministic`: fast deterministic partitioning
+- `deterministic_quality`: high-quality deterministic partitioning (uses flow-based refinement)
+- `large_k`: configuration for partitioning (hyper)graphs into a large number of blocks (e.g. >= 1024 blocks)
 
-The presets can be ranked from lowest to the highest-quality as follows: `large_k`, `deterministic`,
-`default`, `quality`, and `highest_quality`.
+The presets can be ranked from lowest quality to highest quality as follows: `large_k`,
+`default`, `deterministic`, `quality`, `deterministic_quality`, and `highest_quality` (the quality of the matching deterministic and non-deterministic configurations is roughly equivalent).
 We recommend using the `default` configuration to compute good partitions very fast and the `quality` configuration to compute high-quality solutions.
 The `highest_quality` configuration computes better partitions than our `quality` configuration by 0.5% on average at the cost of a two times longer running time for medium-sized instances (up to 100 million pins).
 When you have to partition a (hyper)graph into a large number of blocks (e.g., >= 1024 blocks), you can use our `large_k` configuration.
@@ -156,29 +142,28 @@ Mt-KaHyPar can optimize the cut-net, connectivity, and sum-of-external-degrees m
 
     -o <cut/km1/soed>
 
-### Graph Partitioning
-
-To partition a **graph** with Mt-KaHyPar, you can add the following command line parameters to the partitioning call:
-
-    -h <path-to-graph> --instance-type=graph --input-file-format=<metis/hmetis> -o cut
-
-Mt-KaHyPar then uses optimized data structures for graph partitioning, which speeds up the partitioning time by a factor of two compared to our hypergraph partitioning code. Per default, we expect the input in [hMetis format](mt-kahypar/io/docs/FileFormats.md#hmetis-format-for-input-hypergraphs), but you can read graph files in [Metis format](mt-kahypar/io/docs/FileFormats.md#metis-format-for-input-graphs) via `--input-file-format=metis`.
-
 ### Mapping (Hyper)Graphs onto Graphs
 
-To map a **(hyper)graph** onto a **target graph** with Mt-KaHyPar, you can add the following command line parameters to the partitioning call:
+To map a **(hyper)graph** onto a **target graph**, use the following parameters:
 
     -g <path-to-target-graph> -o steiner_tree
 
 The target graph is expected to be in [Metis format](mt-kahypar/io/docs/FileFormats.md#metis-format-for-input-graphs). The nodes of the (hyper)graph are then mapped onto the nodes of the target graph, while optimizing the Steiner tree metric (see [Supported Objective Functions](#supported-objective-functions)).
+
+### Graph Partitioning
+
+To partition a **graph** in [Metis format](mt-kahypar/io/docs/FileFormats.md#metis-format-for-input-graphs), use the following parameters:
+
+    -h <path-to-graph> --file-format=metis -o cut
+
+Mt-KaHyPar uses optimized data structures for graph partitioning, which speeds up the partitioning time by a factor of two in comparison to hypergraphs.
+For graphs in [hMetis format](mt-kahypar/io/docs/FileFormats.md#hmetis-format-for-input-hypergraphs), the optimized data structures can be enabled with `--instance-type=graph`.
 
 ### Fixed Vertices
 
 Fixed vertices are nodes that are preassigned to particular block and are not allowed to change their block during partitioning. Mt-KaHyPar reads fixed vertices from a file in the [hMetis fix file format](mt-kahypar/io/docs/FileFormats.md#hmetis-fix-file-format), which can be provided via the following command line parameter:
 
     -f <path-to-fixed-vertex-file>
-
-Note that fixed vertices are only supported in our `default`, `quality`, and `highest_quality` configurations.
 
 ### Individual Target Block Weights
 
@@ -192,26 +177,27 @@ Note that the sum of all individual target block weights must be larger than the
 
 To enable writing the partition to a file after partitioning, you can add the following command line parameters to the partitioning call:
 
-    --write-partition-file=true --partition-output-folder=<path/to/folder>
+    --write-partition-file --partition-output-folder=<path/to/folder>
 
 The partition file name is generated automatically based on parameters such as `k`, `imbalance`, `seed` and the input file name and will be located in the folder specified by `--partition-output-folder`. If you do not provide a partition output folder, the partition file will be placed in the same folder as the input hypergraph file.
 
-### Other Useful Program Options
+### Display Options
 
-There are several useful options that can provide you with additional insights during and after the partitioning process:
+There are several useful options to control which output is shown:
 
-- `--verbose=true`: Displays detailed information on the partitioning process
-- `--show-detailed-timings=true`: Shows detailed sub-timings of each phase of the algorithm at the end of partitioning
-- `--enable-progress-bar=true`: Shows a progress bar during the coarsening and refinement phase
+- `-q/--quiet`: Disable partitioning output
+- `-v/--verbose`: Displays more detailed information on the partitioning process
+- `--show-detailed-timings`: Shows detailed sub-timings of each phase of the algorithm at the end of partitioning
+- `--enable-progress-bar`: Shows a progress bar during the coarsening and refinement phase
 
+For changing other configuration parameters manually, please run `--help -v` for a detailed description of the program options.
 
-If you want to change other configuration parameters manually, please run `--help` for a detailed description of the different program options.
-
-Using Mt-KaHyPar as a library
+The C Library
 -----------
 
-We provide a simple C interface to use Mt-KaHyPar as a library, as well as a Python interface.
-On Linux or MacOS, the C library can be built and installed via
+We provide a simple C interface to use Mt-KaHyPar as a library.
+The C libary is available from the debian package provided with the latest release.
+Alternatively, the library can be installed via
 
 ```sh
 make install-mtkahypar  # use sudo (Linux & MacOS) or run shell as an administrator (Windows) to install system-wide
@@ -339,7 +325,7 @@ We recommend [integrating the library via cmake](#integration-via-cmake) into yo
 However, it is also possible to directly compile the program using `g++`:
 
 ```sh
-g++ -std=c++17 -DNDEBUG -O3 your_program.cc -o your_program -lmtkahypar
+g++ -std=c++20 -DNDEBUG -O3 your_program.cc -o your_program -lmtkahypar
 ```
 
 To execute the produced binary, you need to ensure that the installation directory
@@ -359,16 +345,19 @@ if ( mt_kahypar_check_compatibility(hypergraph, QUALITY) ) {
 }
 ```
 
-### The Python Library Interface
+The Python Library
+-----------
 
-You can install the Python library interface via
+We provide a Python library for Mt-KaHyPar, which is available on pypi (see [installation](#installing-mt-kahypar)).
+Alternatively, the Python library can be installed via
 
 ```sh
-make mtkahypar_python
+cmake --build build --target mtkahypar_python
 ```
 
 This will create a shared library in the `build/python` folder (`mtkahypar.so` on Linux and `mtkahypar.pyd` on Windows).
 Copy the libary to your Python project directory to import Mt-KaHyPar as a Python module.
+On Windows, the `.dll` files also need to be copied.
 
 A documentation of the Python module can be found by importing the module (`import mtkahypar`) and calling `help(mtkahypar)` in Python.
 We also provide [several examples](python/examples) that show how to use the Python interface.
@@ -432,39 +421,37 @@ Supported Objective Functions
 -----------
 
 Mt-KaHyPar can optimize several objective functions which we explain in the following in more detail.
-
 ### Cut-Net Metric
 
-![cut_net](https://github.com/kahypar/mt-kahypar/assets/9654047/bc7fc7c7-8ac4-4711-8aec-d0526ef2452c)
+$$\mathfrak{f}_c(\Pi) := \sum_{e \in E_{\text{Cut}}(\Pi)} \omega(e)$$
 
-The cut-net metric is defined as total weight of all nets spanning more than one block of the partition Π (also called *cut nets*).
-
+The cut-net metric is defined as total weight of all nets spanning more than one block of the partition $\Pi$ (also called *cut nets*).
 
 ### Connectivity Metric
 
-![connectivity](https://github.com/kahypar/mt-kahypar/assets/9654047/1c586ff4-63c3-4260-9ef5-98a76578be46)
+$$\mathfrak{f}_{\lambda-1}(\Pi) := \sum_{e \in E_{\text{Cut}}(\Pi)} (\lambda(e)-1) \cdot \omega(e)$$
 
-The connectivity metric additionally multiplies the weight of each cut net with the number of blocks λ(e) spanned by that net minus one.
+The connectivity metric additionally multiplies the weight of each cut net with the number of blocks $\lambda(e)$ spanned by that net minus one.
 Thus, the connectivity metric tries to minimize the number of blocks connected by each net.
 
 
 ### Sum-of-external-Degrees Metric
 
-![soed](https://github.com/kahypar/mt-kahypar/assets/9654047/4006fb4c-ac85-452e-a0d9-93d4dc7842ad)
+$$\mathfrak{f}_s(\Pi) := \sum_{e \in E_{\text{Cut}}(\Pi)} \lambda(e) \cdot \omega(e)$$
 
-The sum-of-external-degrees metric is similar to the connectivity metric, but does not subtract one from the number of blocks λ(e) spanned by a net.
-A peculiarity of this objective function is that removing a net from the cut reduces the metric by 2ω(e), while reducing the connectivity by one reduces the metric only by ω(e).
+The sum-of-external-degrees metric is similar to the connectivity metric, but does not subtract one from the number of blocks $\lambda(e)$ spanned by a net.
+A peculiarity of this objective function is that removing a net from the cut reduces the metric by $2\omega(e)$, while reducing the connectivity by one reduces the metric only by $\omega(e)$.
 Thus, the objective function prefers removing nets from the cut, while as a secondary criterion, it tries to reduce the connectivity of the nets.
 
 ### Steiner Tree Metric
 
-![steiner_tree](https://github.com/kahypar/mt-kahypar/assets/9654047/926ef7d7-bb6b-4959-af0c-75ebd6f6299f)
+$$\mathfrak{f}_{ST} := \sum_{e \in E} \text{dist}_G(\Lambda(e)) \cdot \omega(e)$$
 
 The Steiner tree metric is the most versatile metric that we provide at the moment. A Steiner tree is a tree with minimal weight that connects a subset of the nodes on a graph (a more detailed definition can be found [here][SteinerTrees]).
 For a subset with exactly two nodes, finding a Steiner tree reverts to computing the shortest path between the two nodes.
 When optimizing the Steiner tree metric, we map the node set of a hypergraph H onto the nodes of a target graph G.
 The objective is to minimize the total weight of all Steiner trees induced by the nets of H on G.
-For a net e, dist(Λ(e)) is the weight of the minimal Steiner tree connecting the blocks Λ(e) spanned by net e on G.
+For a net $e$, $\text{dist}(\Lambda(e))$ is the weight of the minimal Steiner tree connecting the blocks $\Lambda(e)$ spanned by net $e$ on G.
 The Steiner tree metric can be used to accurately model wire-lengths in VLSI design or communication costs in distributed systems when some processors do not communicate with each other directly or with different speeds.
 
 Note that finding a Steiner tree is an NP-hard problem. We therefore enforce a strict upper bound on the number of nodes of the target graph G, which is 64 nodes at the moment.
@@ -484,7 +471,7 @@ Mt-KaHyPar implements several graph and hypergraph data structures, and supports
 In the hot parts of the algorithm, each combination of (hyper)graph data structure and objective function is compiled separately, which notably increases the compile time.
 We therefore provide the cmake preset `minimal` to disable some of the features of Mt-KaHyPar for faster compilation.
 
-With this, only the `deterministic`, `default`, and `quality` configurations are available in combination with the cut-net or connectivity metric.
+With this, only the `deterministic`, `deterministic_quality`, `default`, and `quality` configurations are available in combination with the cut-net or connectivity metric.
 Using a disabled feature will throw an error. Note that you can only disable the features in our binary, not in the C and Python interface.
 
 For more fine-grained control, you can directly use the corresponding cmake flags:
@@ -636,7 +623,6 @@ feel free to contact us or create an issue on the
 [issue tracking system](https://github.com/kahypar/mt-kahypar/issues).
 
 [cmake]: http://www.cmake.org/ "CMake tool"
-[Boost.Program_options]: http://www.boost.org/doc/libs/1_58_0/doc/html/program_options.html
 [tbb]: https://software.intel.com/content/www/us/en/develop/tools/threading-building-blocks.html
 [hwloc]: https://www.open-mpi.org/projects/hwloc/
 [LF]: https://github.com/kahypar/mt-kahypar/blob/master/LICENSE "License"

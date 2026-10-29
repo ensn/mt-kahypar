@@ -46,6 +46,7 @@
 #include "mt-kahypar/utils/stats.h"
 #include "mt-kahypar/utils/timer.h"
 #include "mt-kahypar/utils/exception.h"
+#include "mt-kahypar/utils/utilities.h"
 
 
 namespace mt_kahypar {
@@ -109,24 +110,15 @@ namespace mt_kahypar {
       }
     }
 
-    // Setup enabled IP algorithms
-    if ( context.initial_partitioning.enabled_ip_algos.size() > 0 &&
-         context.initial_partitioning.enabled_ip_algos.size() <
-         static_cast<size_t>(InitialPartitioningAlgorithm::UNDEFINED) ) {
+    // Check enabled IP algorithms
+    ALWAYS_ASSERT(context.initial_partitioning.enabled_ip_algos.size() == static_cast<size_t>(InitialPartitioningAlgorithm::UNDEFINED));
+    bool is_one_ip_algo_enabled = false;
+    for ( size_t i = 0; i < context.initial_partitioning.enabled_ip_algos.size(); ++i ) {
+      is_one_ip_algo_enabled |= context.initial_partitioning.enabled_ip_algos[i];
+    }
+    if ( !is_one_ip_algo_enabled ) {
       throw InvalidParameterException(
-        "Size of enabled IP algorithms vector is smaller than number of IP algorithms!");
-    } else if ( context.initial_partitioning.enabled_ip_algos.size() == 0 ) {
-      context.initial_partitioning.enabled_ip_algos.assign(
-        static_cast<size_t>(InitialPartitioningAlgorithm::UNDEFINED), true);
-    } else {
-      bool is_one_ip_algo_enabled = false;
-      for ( size_t i = 0; i < context.initial_partitioning.enabled_ip_algos.size(); ++i ) {
-        is_one_ip_algo_enabled |= context.initial_partitioning.enabled_ip_algos[i];
-      }
-      if ( !is_one_ip_algo_enabled ) {
-        throw InvalidParameterException(
-          "At least one initial partitioning algorithm must be enabled!");
-      }
+        "At least one initial partitioning algorithm must be enabled!");
     }
 
     // Check fixed vertex support compatibility
@@ -168,17 +160,18 @@ namespace mt_kahypar {
 
     timer.start_timer("large_hyperedge_removal", "Large Hyperedge Removal");
     const HypernodeID num_removed_large_hyperedges =
-            large_he_remover.removeLargeHyperedges(hypergraph);
+            large_he_remover.removeSinglePinAndLargeHyperedges(hypergraph);
     timer.stop_timer("large_hyperedge_removal");
 
-    const HyperedgeID num_removed_single_node_hes = hypergraph.numRemovedHyperedges();
-    if (context.partition.verbose_output &&
+    const HyperedgeID total_removed_hes = hypergraph.numRemovedHyperedges();
+    const HyperedgeID num_removed_single_node_hes = total_removed_hes - num_removed_large_hyperedges;
+    if (context.partition.enable_logging && context.partition.verbose_logging &&
         ( num_removed_single_node_hes > 0 ||
           num_removed_degree_zero_hypernodes > 0 ||
           num_removed_large_hyperedges > 0 )) {
       LOG << "Performed single-node/large HE removal and degree-zero HN contractions:";
       LOG << "\033[1m\033[31m" << " # removed"
-          << num_removed_single_node_hes << "single-pin hyperedges during hypergraph file parsing"
+          << num_removed_single_node_hes << "single-pin hyperedges"
           << "\033[0m";
       LOG << "\033[1m\033[31m" << " # removed"
           << num_removed_large_hyperedges << "large hyperedges with |e| >" << large_he_remover.largeHyperedgeThreshold() << "\033[0m";
@@ -268,8 +261,7 @@ namespace mt_kahypar {
 
       timer.start_timer("community_detection", "Community Detection");
       timer.start_timer("construct_graph", "Construct Graph");
-      Graph<Hypergraph> graph(hypergraph,
-        context.preprocessing.community_detection.edge_weight_function, is_graph);
+      Graph graph(hypergraph, context.preprocessing.community_detection.edge_weight_function, is_graph);
       if ( !context.preprocessing.community_detection.low_memory_contraction ) {
         graph.allocateContractionBuffers();
       }
@@ -281,9 +273,7 @@ namespace mt_kahypar {
       timer.stop_timer("perform_community_detection");
       timer.stop_timer("community_detection");
 
-      if (context.partition.verbose_output) {
-        io::printCommunityInformation(hypergraph);
-      }
+      io::printCommunityInformation(hypergraph, context);
     }
 
     precomputeSteinerTrees(hypergraph, target_graph, context);
@@ -305,7 +295,7 @@ namespace mt_kahypar {
           const PartitionID from = partitioned_hg.partID(hn);
           const PartitionID to = partitioned_hg.fixedVertexBlock(hn);
           if ( from != to ) {
-            if ( context.partition.verbose_output ) {
+            if ( context.partition.enable_logging && context.partition.verbose_logging ) {
               LOG << RED << "Node" << hn << "is fixed to block" << to
                   << ", but it is assigned to block" << from << "!"
                   << "It is now moved to its fixed vertex block." << END;
@@ -327,6 +317,15 @@ namespace mt_kahypar {
     io::printContext(context);
     io::printMemoryPoolConsumption(context);
     io::printInputInformation(context, hypergraph);
+
+    if (context.partition.k == 1) {
+      PartitionedHypergraph partitioned_hg(context.partition.k, hypergraph, parallel_tag_t());
+      partitioned_hg.doParallelForAllNodes([&](const HypernodeID hn) {
+        partitioned_hg.setOnlyNodePart(hn, 0);
+      });
+      partitioned_hg.initializePartition();
+      return partitioned_hg;
+    }
 
     #ifdef KAHYPAR_ENABLE_STEINER_TREE_METRIC
     bool map_partition_to_target_graph_at_the_end = false;
@@ -377,7 +376,7 @@ namespace mt_kahypar {
 
     // ################## POSTPROCESSING ##################
     timer.start_timer("postprocessing", "Postprocessing");
-    large_he_remover.restoreLargeHyperedges(partitioned_hypergraph);
+    large_he_remover.restoreSinglePinAndLargeHyperedges(partitioned_hypergraph);
     degree_zero_hn_remover.restoreDegreeZeroHypernodes(partitioned_hypergraph);
     forceFixedVertexAssignment(partitioned_hypergraph, context);
     timer.stop_timer("postprocessing");
@@ -393,7 +392,7 @@ namespace mt_kahypar {
     }
     #endif
 
-    if (context.partition.verbose_output) {
+    if (context.partition.enable_logging && context.partition.verbose_logging) {
       io::printHypergraphInfo(partitioned_hypergraph.hypergraph(), context,
         "Uncoarsened Hypergraph", context.partition.show_memory_consumption);
       io::printStripe();
@@ -410,6 +409,8 @@ namespace mt_kahypar {
     Hypergraph& hypergraph = partitioned_hg.hypergraph();
     configurePreprocessing(hypergraph, context);
     setupContext(hypergraph, context, target_graph);
+
+    if (context.partition.k == 1) return;
 
     utils::Timer& timer = utils::Utilities::instance().getTimer(context.utility_id);
     timer.start_timer("preprocessing", "Preprocessing");
@@ -439,12 +440,12 @@ namespace mt_kahypar {
 
     // ################## POSTPROCESSING ##################
     timer.start_timer("postprocessing", "Postprocessing");
-    large_he_remover.restoreLargeHyperedges(partitioned_hg);
+    large_he_remover.restoreSinglePinAndLargeHyperedges(partitioned_hg);
     degree_zero_hn_remover.restoreDegreeZeroHypernodes(partitioned_hg);
     forceFixedVertexAssignment(partitioned_hg, context);
     timer.stop_timer("postprocessing");
 
-    if (context.partition.verbose_output) {
+    if (context.partition.enable_logging && context.partition.verbose_logging) {
       io::printHypergraphInfo(partitioned_hg.hypergraph(), context,
         "Uncoarsened Hypergraph", context.partition.show_memory_consumption);
       io::printStripe();
