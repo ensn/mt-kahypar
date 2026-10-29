@@ -43,6 +43,10 @@ template <typename T>
 class zero_allocator : public parallel::scalable_allocator<T> {
  public:
   using value_type = T;
+  template <typename U>
+struct rebind {
+  using other = zero_allocator<U>;
+};
   using propagate_on_container_move_assignment = std::true_type;
   using is_always_equal = std::true_type;
 
