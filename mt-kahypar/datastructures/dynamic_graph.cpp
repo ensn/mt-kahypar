@@ -28,16 +28,10 @@
 
 #include "mt-kahypar/datastructures/dynamic_graph.h"
 
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_scan.h>
-#include <tbb/parallel_sort.h>
-#include <tbb/parallel_reduce.h>
-#include <tbb/concurrent_queue.h>
+#include <tbb/parallel_invoke.h>
 
 #include "mt-kahypar/parallel/stl/scalable_queue.h"
-#include "mt-kahypar/datastructures/concurrent_bucket_map.h"
 #include "mt-kahypar/datastructures/hypergraph_utils.h"
-#include "mt-kahypar/datastructures/streaming_vector.h"
 #include "mt-kahypar/utils/timer.h"
 
 namespace mt_kahypar {
@@ -120,10 +114,10 @@ DynamicGraph::ContractionResult DynamicGraph::contract(const HypernodeID u,
   const bool valid_contraction =
     contraction_partner_valid && less_or_equal_than_max_node_weight &&
     ( !hasFixedVertices() ||
-      /** only run this if all previous checks were successful */ _fixed_vertices.contract(u, v) );
+      /** only run this if all previous checks were successful */ _fixed_vertices.contract(*this, u, v) );
   if ( valid_contraction ) {
     ASSERT(nodeIsEnabled(u), "Hypernode" << u << "is disabled!");
-    hypernode(u).setWeight(nodeWeight(u) + nodeWeight(v));
+    std::atomic_ref(hypernode(u).weight()).store(nodeWeight(u) + nodeWeight(v), std::memory_order_relaxed);
     hypernode(v).disable();
     releaseHypernode(u);
     releaseHypernode(v);
@@ -297,7 +291,6 @@ DynamicGraph DynamicGraph::copy(parallel_tag_t) const {
     hypergraph._contraction_tree = _contraction_tree.copy(parallel_tag_t());
   }, [&] {
     hypergraph._fixed_vertices = _fixed_vertices.copy();
-    hypergraph._fixed_vertices.setHypergraph(&hypergraph);
   });
   return hypergraph;
 }
@@ -323,7 +316,6 @@ DynamicGraph DynamicGraph::copy() const {
   }
   hypergraph._contraction_tree = _contraction_tree.copy();
   hypergraph._fixed_vertices = _fixed_vertices.copy();
-  hypergraph._fixed_vertices.setHypergraph(&hypergraph);
 
   return hypergraph;
 }

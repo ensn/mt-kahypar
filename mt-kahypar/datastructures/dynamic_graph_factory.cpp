@@ -100,8 +100,7 @@ DynamicGraph DynamicGraphFactory::construct_from_graph_edges(
       graph._adjacency_array.sortIncidentEdges();
     }
   }, [&] {
-    graph._acquired_nodes.assign(
-      num_nodes, parallel::IntegralAtomicWrapper<bool>(false));
+    graph._acquired_nodes.assign(num_nodes, SpinLock());
   }, [&] {
     graph._contraction_tree.initialize(num_nodes);
   });
@@ -181,13 +180,12 @@ std::pair<DynamicGraph, parallel::scalable_vector<HypernodeID> > DynamicGraphFac
   }, [&] {
     if ( graph.hasFixedVertices() ) {
       // Set fixed vertices
-      ds::FixedVertexSupport<DynamicGraph> fixed_vertices(
+      ds::FixedVertexSupport fixed_vertices(
         compactified_graph.initialNumNodes(), graph._fixed_vertices.numBlocks());
-      fixed_vertices.setHypergraph(&compactified_graph);
       graph.doParallelForAllNodes([&](const HypernodeID& hn) {
         if ( graph.isFixed(hn) ) {
           const HypernodeID mapped_hn = hn_mapping[hn];
-          fixed_vertices.fixToBlock(mapped_hn, graph.fixedVertexBlock(hn));
+          fixed_vertices.fixToBlock(compactified_graph, mapped_hn, graph.fixedVertexBlock(hn));
         }
       });
       compactified_graph.addFixedVertexSupport(std::move(fixed_vertices));

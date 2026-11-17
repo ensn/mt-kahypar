@@ -170,14 +170,14 @@ namespace mt_kahypar {
           num_removed_degree_zero_hypernodes > 0 ||
           num_removed_large_hyperedges > 0 )) {
       LOG << "Performed single-node/large HE removal and degree-zero HN contractions:";
-      LOG << "\033[1m\033[31m" << " # removed"
+      LOG << RED << " # removed"
           << num_removed_single_node_hes << "single-pin hyperedges"
-          << "\033[0m";
-      LOG << "\033[1m\033[31m" << " # removed"
-          << num_removed_large_hyperedges << "large hyperedges with |e| >" << large_he_remover.largeHyperedgeThreshold() << "\033[0m";
-      LOG << "\033[1m\033[31m" << " # contracted"
+          << END;
+      LOG << RED << " # removed"
+          << num_removed_large_hyperedges << "large hyperedges with |e| >" << large_he_remover.largeHyperedgeThreshold() << END;
+      LOG << RED << " # contracted"
           << num_removed_degree_zero_hypernodes << "hypernodes with d(v) = 0 and w(v) = 1"
-          << "\033[0m";
+          << END;
       io::printStripe();
     }
   }
@@ -318,6 +318,15 @@ namespace mt_kahypar {
     io::printMemoryPoolConsumption(context);
     io::printInputInformation(context, hypergraph);
 
+    if (context.partition.k == 1) {
+      PartitionedHypergraph partitioned_hg(context.partition.k, hypergraph, parallel_tag_t());
+      partitioned_hg.doParallelForAllNodes([&](const HypernodeID hn) {
+        partitioned_hg.setOnlyNodePart(hn, 0);
+      });
+      partitioned_hg.initializePartition();
+      return partitioned_hg;
+    }
+
     #ifdef KAHYPAR_ENABLE_STEINER_TREE_METRIC
     bool map_partition_to_target_graph_at_the_end = false;
     if ( context.partition.objective == Objective::steiner_tree &&
@@ -400,6 +409,8 @@ namespace mt_kahypar {
     Hypergraph& hypergraph = partitioned_hg.hypergraph();
     configurePreprocessing(hypergraph, context);
     setupContext(hypergraph, context, target_graph);
+
+    if (context.partition.k == 1) return;
 
     utils::Timer& timer = utils::Utilities::instance().getTimer(context.utility_id);
     timer.start_timer("preprocessing", "Preprocessing");

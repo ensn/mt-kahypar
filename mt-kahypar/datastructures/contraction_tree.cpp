@@ -27,13 +27,16 @@
 
 #include "mt-kahypar/datastructures/contraction_tree.h"
 
+#include <atomic>
 #include <queue>
 
 #include <tbb/parallel_reduce.h>
 #include <tbb/parallel_invoke.h>
 #include <tbb/enumerable_thread_specific.h>
 
+#include "mt-kahypar/parallel/atomic_wrapper.h"
 #include "mt-kahypar/parallel/parallel_prefix_sum.h"
+#include "mt-kahypar/parallel/thread_management.h"
 #include "mt-kahypar/datastructures/streaming_vector.h"
 #include "mt-kahypar/utils/timer.h"
 
@@ -387,7 +390,7 @@ BatchVector ContractionTree::createBatchUncontractionHierarchyForVersion(BatchIn
 
   // Distribute roots of the contraction tree to local priority queues of
   // each thread.
-  const size_t num_hardware_threads = std::thread::hardware_concurrency();
+  const size_t num_hardware_threads = parallel::max_num_thread_ids();
   parallel::scalable_vector<PQ> local_pqs(num_hardware_threads);
   const parallel::scalable_vector<HypernodeID>& roots = roots_of_version(version);
   tbb::parallel_for(UL(0), roots.size(), [&](const size_t i) {
@@ -452,17 +455,20 @@ BatchVector ContractionTree::createBatchUncontractionHierarchyForVersion(BatchIn
         batch_assignments[j].batch_index = assignment.batch_index;
         batch_assignments[j].batch_pos = assignment.batch_pos + (j - start_idx);
       }
-      current_batch_index = assignment.batch_index;
+      std::atomic_ref(current_batch_index)
+        .store(assignment.batch_index, std::memory_order_relaxed);
 
       if ( pq.empty() ) {
         std::swap(pq, next_pq);
         // Compute minimum batch index to which a thread assigned last.
         // Afterwards, transmit information to batch assigner to speed up
         // batch index computation.
-        ++current_batch_index;
+        std::atomic_ref(current_batch_index)
+          .store(current_batch_index + 1, std::memory_order_relaxed);
         size_t min_batch_index = current_batch_index;
         for ( const size_t& batch_index : local_batch_indices ) {
-          min_batch_index = std::min(min_batch_index, batch_index);
+          const size_t index = parallel::atomic_load(batch_index, std::memory_order_relaxed);
+          min_batch_index = std::min(min_batch_index, index);
         }
         batch_assigner.increaseHighWaterMark(min_batch_index);
       }

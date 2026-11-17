@@ -95,8 +95,7 @@ DynamicHypergraph DynamicHypergraphFactory::construct(
   hypergraph._incidence_array.resize(hypergraph._num_pins);
 
   tbb::parallel_invoke([&] {
-    hypergraph._acquired_hes.assign(
-      num_hyperedges, parallel::IntegralAtomicWrapper<bool>(false));
+    hypergraph._acquired_hes.assign(num_hyperedges, SpinLock());
     tbb::parallel_for(ID(0), num_hyperedges, [&](const size_t pos) {
       // Setup hyperedges
       DynamicHypergraph::Hyperedge& hyperedge = hypergraph._hyperedges[pos];
@@ -126,8 +125,7 @@ DynamicHypergraph DynamicHypergraphFactory::construct(
     hypergraph._hyperedges[num_hyperedges].setFirstEntry(hypergraph._num_pins);
   }, [&] {
     tbb::parallel_invoke([&] {
-      hypergraph._acquired_hns.assign(
-        num_hypernodes, parallel::IntegralAtomicWrapper<bool>(false));
+      hypergraph._acquired_hns.assign(num_hypernodes, SpinLock());
     }, [&] {
       hypergraph._contraction_tree.initialize(num_hypernodes);
     });
@@ -223,13 +221,12 @@ DynamicHypergraphFactory::compactify(const DynamicHypergraph& hypergraph) {
   }, [&] {
     if ( hypergraph.hasFixedVertices() ) {
       // Set fixed vertices
-      ds::FixedVertexSupport<DynamicHypergraph> fixed_vertices(
+      ds::FixedVertexSupport fixed_vertices(
         compactified_hypergraph.initialNumNodes(), hypergraph._fixed_vertices.numBlocks());
-      fixed_vertices.setHypergraph(&compactified_hypergraph);
       hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
         if ( hypergraph.isFixed(hn) ) {
           const HypernodeID mapped_hn = hn_mapping[hn];
-          fixed_vertices.fixToBlock(mapped_hn, hypergraph.fixedVertexBlock(hn));
+          fixed_vertices.fixToBlock(compactified_hypergraph, mapped_hn, hypergraph.fixedVertexBlock(hn));
         }
       });
       compactified_hypergraph.addFixedVertexSupport(std::move(fixed_vertices));
