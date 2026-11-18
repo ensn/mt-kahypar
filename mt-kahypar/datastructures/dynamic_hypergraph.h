@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <queue>
 
@@ -105,7 +106,7 @@ class DynamicHypergraph {
       _valid(valid) { }
 
     bool isDisabled() const {
-      return _valid == false;
+      return !parallel::atomic_load(_valid, std::memory_order_relaxed);
     }
 
     void enable() {
@@ -115,10 +116,14 @@ class DynamicHypergraph {
 
     void disable() {
       ASSERT(!isDisabled());
-      _valid = false;
+      std::atomic_ref(_valid).store(false, std::memory_order_relaxed);
     }
 
-    HypernodeWeight weight() const {
+    HypernodeWeight& weight() {
+      return _weight;
+    }
+
+    const HypernodeWeight& weight() const {
       return _weight;
     }
 
@@ -210,7 +215,7 @@ class DynamicHypergraph {
       return _begin + _size;
     }
 
-    size_t size() const {
+    const size_t& size() const {
       ASSERT(!isDisabled());
       return _size;
     }
@@ -227,7 +232,7 @@ class DynamicHypergraph {
 
     void decrementSize() {
       ASSERT(!isDisabled());
-      --_size;
+      std::atomic_ref(_size).fetch_sub(1, std::memory_order_relaxed);
     }
 
     HyperedgeWeight weight() const {
@@ -380,7 +385,7 @@ class DynamicHypergraph {
   };
 
   using IncidenceArray = Array<HypernodeID>;
-  using OwnershipVector = parallel::scalable_vector<parallel::IntegralAtomicWrapper<bool>>;
+  using OwnershipVector = parallel::scalable_vector<SpinLock>;
   using ThreadLocalHyperedgeVector = tbb::enumerable_thread_specific<parallel::scalable_vector<HyperedgeID>>;
   using ThreadLocalBitset = tbb::enumerable_thread_specific<kahypar::ds::FastResetFlagArray<>>;
   using ThreadLocalBitvector = tbb::enumerable_thread_specific<parallel::scalable_vector<bool>>;
@@ -400,7 +405,7 @@ class DynamicHypergraph {
   // ! Iterator to iterate over the hyperedges
   using HyperedgeIterator = HypergraphElementIterator<const Hyperedge>;
   // ! Iterator to iterate over the pins of a hyperedge
-  using IncidenceIterator = typename IncidenceArray::const_iterator;
+  using IncidenceIterator = typename IncidenceArray::atomic_iterator;
   // ! Iterator to iterate over the incident nets of a hypernode
   using IncidentNetsIterator = typename IncidentNetArray::const_iterator;
 
@@ -461,7 +466,6 @@ class DynamicHypergraph {
     _he_bitset(std::move(other._he_bitset)),
     _removable_single_pin_and_parallel_nets(std::move(other._removable_single_pin_and_parallel_nets)),
     _fixed_vertices(std::move(other._fixed_vertices)) {
-    _fixed_vertices.setHypergraph(this);
   }
 
   DynamicHypergraph & operator= (DynamicHypergraph&& other) {
@@ -488,7 +492,6 @@ class DynamicHypergraph {
     _he_bitset = std::move(other._he_bitset);
     _removable_single_pin_and_parallel_nets = std::move(other._removable_single_pin_and_parallel_nets);
     _fixed_vertices = std::move(other._fixed_vertices);
-    _fixed_vertices.setHypergraph(this);
     return *this;
   }
 
@@ -608,9 +611,10 @@ class DynamicHypergraph {
   IteratorRange<IncidenceIterator> pins(const HyperedgeID e) const {
     ASSERT(!hyperedge(e).isDisabled(), "Hyperedge" << e << "is disabled");
     const Hyperedge& he = hyperedge(e);
+    const size_t he_size = parallel::atomic_load(hyperedge(e).size(), std::memory_order_relaxed);
     return IteratorRange<IncidenceIterator>(
-      _incidence_array.cbegin() + he.firstEntry(),
-      _incidence_array.cbegin() + he.firstInvalidEntry());
+      _incidence_array.atomic_begin() + he.firstEntry(),
+      _incidence_array.atomic_begin() + he.firstEntry() + he_size);
   }
 
   // ####################### Hypernode Information #######################
@@ -618,7 +622,7 @@ class DynamicHypergraph {
   // ! Weight of a vertex
   HypernodeWeight nodeWeight(const HypernodeID u) const {
     ASSERT(u < _num_hypernodes, "Hypernode" << u << "does not exist");
-    return hypernode(u).weight();
+    return parallel::atomic_load(hypernode(u).weight(), std::memory_order_relaxed);
   }
 
   // ! Sets the weight of a vertex
@@ -686,7 +690,7 @@ class DynamicHypergraph {
   // ! Number of pins of a hyperedge
   HypernodeID edgeSize(const HyperedgeID e) const {
     ASSERT(!hyperedge(e).isDisabled(), "Hyperedge" << e << "is disabled");
-    return hyperedge(e).size();
+    return parallel::atomic_load(hyperedge(e).size(), std::memory_order_relaxed);
   }
 
   // ! Maximum size of a hyperedge
@@ -733,9 +737,8 @@ class DynamicHypergraph {
 
   // ####################### Fixed Vertex Support #######################
 
-  void addFixedVertexSupport(FixedVertexSupport<DynamicHypergraph>&& fixed_vertices) {
+  void addFixedVertexSupport(FixedVertexSupport&& fixed_vertices) {
     _fixed_vertices = std::move(fixed_vertices);
-    _fixed_vertices.setHypergraph(this);
   }
 
   bool hasFixedVertices() const {
@@ -762,11 +765,11 @@ class DynamicHypergraph {
     _fixed_vertices.setMaxBlockWeight(max_block_weights);
   }
 
-  const FixedVertexSupport<DynamicHypergraph>& fixedVertexSupport() const {
+  const FixedVertexSupport& fixedVertexSupport() const {
     return _fixed_vertices;
   }
 
-  FixedVertexSupport<DynamicHypergraph> copyOfFixedVertexSupport() const {
+  FixedVertexSupport copyOfFixedVertexSupport() const {
     return _fixed_vertices.copy();
   }
 
@@ -982,46 +985,32 @@ class DynamicHypergraph {
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void acquireHypernode(const HypernodeID u) {
     ASSERT(u < _num_hypernodes, "Hypernode" << u << "does not exist");
-    bool expected = false;
-    bool desired = true;
-    while ( !_acquired_hns[u].compare_exchange_strong(expected, desired) ) {
-      expected = false;
-    }
+    _acquired_hns[u].lock();
   }
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE bool tryAcquireHypernode(const HypernodeID u) {
     ASSERT(u < _num_hypernodes, "Hypernode" << u << "does not exist");
-    bool expected = false;
-    bool desired = true;
-    return _acquired_hns[u].compare_exchange_strong(expected, desired);
+    return _acquired_hns[u].tryLock();
   }
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void releaseHypernode(const HypernodeID u) {
     ASSERT(u < _num_hypernodes, "Hypernode" << u << "does not exist");
-    ASSERT(_acquired_hns[u], "Hypernode" << u << "is not acquired!");
-    _acquired_hns[u] = false;
+    _acquired_hns[u].unlock();
   }
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void acquireHyperedge(const HyperedgeID e) {
     ASSERT(e < _num_hyperedges, "Hyperedge" << e << "does not exist");
-    bool expected = false;
-    bool desired = true;
-    while ( !_acquired_hes[e].compare_exchange_strong(expected, desired) ) {
-      expected = false;
-    }
+    _acquired_hes[e].lock();
   }
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE bool tryAcquireHyperedge(const HyperedgeID e) {
     ASSERT(e < _num_hyperedges, "Hyperedge" << e << "does not exist");
-    bool expected = false;
-    bool desired = true;
-    return _acquired_hes[e].compare_exchange_strong(expected, desired);
+    return _acquired_hes[e].tryLock();
   }
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void releaseHyperedge(const HyperedgeID e) {
     ASSERT(e < _num_hyperedges, "Hyperedge" << e << "does not exist");
-    ASSERT(_acquired_hes[e], "Hyperedge" << e << "is not acquired!");
-    _acquired_hes[e] = false;
+    _acquired_hes[e].unlock();
   }
 
   // ####################### Hypernode Information #######################
@@ -1154,7 +1143,7 @@ class DynamicHypergraph {
   Array<Hypernode> _hypernodes;
   // ! Contraction Tree
   ContractionTree _contraction_tree;
-  // ! Pins of hyperedges
+  // ! Incident nets of hypernodes
   IncidentNetArray _incident_nets;
   // ! Atomic bool vector used to acquire unique ownership of hypernodes
   OwnershipVector _acquired_hns;
@@ -1162,7 +1151,7 @@ class DynamicHypergraph {
 
   // ! Hyperedges
   Array<Hyperedge> _hyperedges;
-  // ! Incident nets of hypernodes
+  // ! Pins of hyperedges
   IncidenceArray _incidence_array;
   // ! Atomic bool vector used to acquire unique ownership of hyperedges
   OwnershipVector _acquired_hes;
@@ -1177,7 +1166,7 @@ class DynamicHypergraph {
   kahypar::ds::FastResetFlagArray<> _removable_single_pin_and_parallel_nets;
 
   // ! Fixed Vertex Support
-  FixedVertexSupport<DynamicHypergraph> _fixed_vertices;
+  FixedVertexSupport _fixed_vertices;
 };
 
 } // namespace ds

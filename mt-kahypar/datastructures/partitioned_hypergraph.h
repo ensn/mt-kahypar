@@ -488,7 +488,7 @@ class PartitionedHypergraph {
     _hg->restoreEdge(he);
     ASSERT(edgeSize(he) == 1);  // trying to get the size before restoring triggers another assertion
 
-    const HypernodeID pin = _hg->_incidence_array[_hg->hyperedge(he).firstEntry()];
+    const HypernodeID pin = _hg->pinAt(he, 0);
     const PartitionID block = partID(pin);
     _con_info.setPinCountInPart(he, block, 1);
     _con_info.addBlock(he, block);
@@ -555,7 +555,7 @@ class PartitionedHypergraph {
   // ! Block that vertex u belongs to
   PartitionID partID(const HypernodeID u) const {
     ASSERT(u < initialNumNodes(), "Hypernode" << u << "does not exist");
-    return _part_ids[u];
+    return parallel::atomic_load(_part_ids[u], std::memory_order_relaxed);
   }
 
   void extractPartIDs(Array<PartitionID>& part_ids) {
@@ -607,7 +607,7 @@ class PartitionedHypergraph {
     const HypernodeWeight wu = nodeWeight(u);
     const HypernodeWeight to_weight_after = _part_weights[to].add_fetch(wu, std::memory_order_relaxed);
     if (to_weight_after <= max_weight_to) {
-      _part_ids[u] = to;
+      std::atomic_ref(_part_ids[u]).store(to, std::memory_order::relaxed);
       _part_weights[from].fetch_sub(wu, std::memory_order_relaxed);
       report_success();
       SynchronizedEdgeUpdate sync_update;

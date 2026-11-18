@@ -148,7 +148,7 @@ size_t ParallelLocalMovingModularity::synchronousParallelRound(const Graph& grap
 
   for (size_t sub_round = 0; sub_round < num_sub_rounds; ++sub_round) {
     auto [first_bucket, last_bucket] = parallel::chunking::bounds(sub_round, num_buckets, num_buckets_per_sub_round);
-    assert(first_bucket < last_bucket && last_bucket < permutation.bucket_bounds.size());
+    ASSERT(first_bucket < last_bucket && last_bucket < permutation.bucket_bounds.size());
     size_t first = permutation.bucket_bounds[first_bucket];
     size_t last = permutation.bucket_bounds[last_bucket];
 
@@ -238,7 +238,7 @@ size_t ParallelLocalMovingModularity::parallelNonDeterministicRound(const Graph&
     if (best_cluster != from) {
       _cluster_volumes[best_cluster] += volU;
       _cluster_volumes[from] -= volU;
-      communities[u] = best_cluster;
+      std::atomic_ref(communities[u]).store(best_cluster, std::memory_order_relaxed);
       ++local_number_of_nodes_moved.local();
     }
   };

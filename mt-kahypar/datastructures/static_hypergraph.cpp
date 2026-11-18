@@ -27,14 +27,16 @@
 
 #include "static_hypergraph.h"
 
+#include <atomic>
+
+#include <tbb/parallel_reduce.h>
+#include <tbb/parallel_sort.h>
+
 #include "mt-kahypar/parallel/parallel_prefix_sum.h"
 #include "mt-kahypar/datastructures/concurrent_bucket_map.h"
 #include "mt-kahypar/datastructures/hypergraph_utils.h"
 #include "mt-kahypar/utils/timer.h"
 #include "mt-kahypar/utils/memory_tree.h"
-
-#include <tbb/parallel_reduce.h>
-#include <tbb/parallel_sort.h>
 
 namespace mt_kahypar::ds {
 
@@ -97,7 +99,7 @@ namespace mt_kahypar::ds {
 
     doParallelForAllNodes([&](const HypernodeID& hn) {
       ASSERT(static_cast<size_t>(communities[hn]) < mapping.size());
-      mapping[communities[hn]] = UL(1);
+      std::atomic_ref(mapping[communities[hn]]).store(1, std::memory_order_relaxed);
     });
 
     // Prefix sum determines vertex ids in coarse hypergraph
@@ -390,7 +392,8 @@ namespace mt_kahypar::ds {
     auto assign_communities = [&] {
       hypergraph._community_ids.resize(num_hypernodes, 0);
       doParallelForAllNodes([&](HypernodeID fine_hn) {
-        hypergraph.setCommunityID(map_to_coarse_hypergraph(fine_hn), communityID(fine_hn));
+        std::atomic_ref(hypergraph._community_ids[map_to_coarse_hypergraph(fine_hn)])
+          .store(communityID(fine_hn), std::memory_order_relaxed);
       });
     };
 
@@ -483,12 +486,11 @@ namespace mt_kahypar::ds {
 
     if ( hasFixedVertices() ) {
       // Map fixed vertices to coarse hypergraph
-      FixedVertexSupport<StaticHypergraph> coarse_fixed_vertices(
+      FixedVertexSupport coarse_fixed_vertices(
         hypergraph.initialNumNodes(), _fixed_vertices.numBlocks());
-      coarse_fixed_vertices.setHypergraph(&hypergraph);
       doParallelForAllNodes([&](const HypernodeID hn) {
         if ( isFixed(hn) ) {
-          coarse_fixed_vertices.fixToBlock(communities[hn], fixedVertexBlock(hn));
+          coarse_fixed_vertices.fixToBlock(hypergraph, communities[hn], fixedVertexBlock(hn));
         }
       });
       hypergraph.addFixedVertexSupport(std::move(coarse_fixed_vertices));

@@ -93,7 +93,8 @@ using TypeTraitsList = kahypar::meta::Typelist<StaticHypergraphTypeTraits,
                                                ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(COMMA DynamicGraphTypeTraits)
                                                ENABLE_LARGE_K(COMMA LargeKHypergraphTypeTraits)>;
 
-using MultilevelTypeTraitsList = kahypar::meta::Typelist<StaticHypergraphTypeTraits
+using MultilevelTypeTraitsList = kahypar::meta::Typelist<StaticHypergraphTypeTraits,
+                                               CompressedHypergraphTypeTraits
                                                ENABLE_GRAPHS(COMMA StaticGraphTypeTraits)
                                                ENABLE_LARGE_K(COMMA LargeKHypergraphTypeTraits)>;
 
@@ -106,6 +107,11 @@ using NLevelTypeTraitsList = kahypar::meta::Typelist<ENABLE_HIGHEST_QUALITY(Dyna
   ENABLE_GRAPHS(template FUNC(ds::StaticGraph);)                     \
   ENABLE_HIGHEST_QUALITY(template FUNC(ds::DynamicHypergraph);)      \
   ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template FUNC(ds::DynamicGraph);)
+
+#define INSTANTIATE_FUNC_WITH_MULTILEVEL_HYPERGRAPHS(FUNC)           \
+  template FUNC(ds::StaticHypergraph);                               \
+  template FUNC(ds::CompressedHypergraph);                           \
+  ENABLE_GRAPHS(template FUNC(ds::StaticGraph);)
 
 #define INSTANTIATE_CLASS_WITH_HYPERGRAPHS(C)                        \
   template class C<ds::StaticHypergraph>;                            \
@@ -122,6 +128,16 @@ using NLevelTypeTraitsList = kahypar::meta::Typelist<ENABLE_HIGHEST_QUALITY(Dyna
   ENABLE_HIGHEST_QUALITY(template FUNC(DynamicPartitionedHypergraph);)       \
   ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template FUNC(DynamicPartitionedGraph);)
 
+#define INSTANTIATE_FUNC_WITH_ONLY_PARTITIONED_HYPERGRAPH(FUNC)              \
+  template FUNC(StaticPartitionedHypergraph);                                \
+  template FUNC(CompressedPartitionedHypergraph);                            \
+  ENABLE_LARGE_K(template FUNC(StaticSparsePartitionedHypergraph);)          \
+  ENABLE_HIGHEST_QUALITY(template FUNC(DynamicPartitionedHypergraph);)
+
+#define INSTANTIATE_FUNC_WITH_PARTITIONED_GRAPH(FUNC)                        \
+  ENABLE_GRAPHS(template FUNC(StaticPartitionedGraph);)                      \
+  ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template FUNC(DynamicPartitionedGraph);)
+
 #define INSTANTIATE_CLASS_WITH_PARTITIONED_HG(C)                             \
   template class C<StaticPartitionedHypergraph>;                             \
   template class C<CompressedPartitionedHypergraph>;                         \
@@ -136,6 +152,12 @@ using NLevelTypeTraitsList = kahypar::meta::Typelist<ENABLE_HIGHEST_QUALITY(Dyna
   ENABLE_GRAPHS(template class C<StaticGraphTypeTraits>;)                    \
   ENABLE_HIGHEST_QUALITY(template class C<DynamicHypergraphTypeTraits>;)     \
   ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template class C<DynamicGraphTypeTraits>;)\
+  ENABLE_LARGE_K(template class C<LargeKHypergraphTypeTraits>;)
+
+#define INSTANTIATE_CLASS_WITH_MULTILEVEL_TYPE_TRAITS(C)             \
+  template class C<StaticHypergraphTypeTraits>;                      \
+  template class C<CompressedHypergraphTypeTraits>;                  \
+  ENABLE_GRAPHS(template class C<StaticGraphTypeTraits>;)            \
   ENABLE_LARGE_K(template class C<LargeKHypergraphTypeTraits>;)
 
 #define INSTANTIATE_CLASS_WITH_NLEVEL_TYPE_TRAITS(C)                            \

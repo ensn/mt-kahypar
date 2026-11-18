@@ -55,30 +55,14 @@ mt_kahypar_hypergraph_t constructHypergraph(const HypernodeID& num_hypernodes,
     reinterpret_cast<mt_kahypar_hypergraph_s*>(hypergraph), Hypergraph::TYPE };
 }
 
-
-mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
-                                        const mt_kahypar_hypergraph_type_t& type,
-                                        const bool stable_construction,
-                                        const bool remove_single_pin_hes) {
-  if (type == COMPRESSED_HYPERGRAPH) {
-    auto* hypergraph = new ds::CompressedHypergraph(
-      ds::CompressedHypergraphFactory::stream(filename, remove_single_pin_hes)
-    );
-    return mt_kahypar_hypergraph_t {
-      reinterpret_cast<mt_kahypar_hypergraph_s*>(hypergraph), ds::CompressedHypergraph::TYPE
-    };
-  }
-
-  HyperedgeID num_hyperedges = 0;
-  HypernodeID num_hypernodes = 0;
-  HyperedgeID num_removed_single_pin_hyperedges = 0;
-  HyperedgeVector hyperedges;
-  vec<HyperedgeWeight> hyperedges_weight;
-  vec<HypernodeWeight> hypernodes_weight;
-  readHypergraphFile(filename, num_hyperedges, num_hypernodes,
-                     num_removed_single_pin_hyperedges, hyperedges,
-                     hyperedges_weight, hypernodes_weight, remove_single_pin_hes);
-
+mt_kahypar_hypergraph_t constructHypergraph(const mt_kahypar_hypergraph_type_t& type,
+                                            const HypernodeID& num_hypernodes,
+                                            const HyperedgeID& num_hyperedges,
+                                            const HyperedgeVector& hyperedges,
+                                            vec<HyperedgeWeight>& hyperedge_weight,
+                                            vec<HypernodeWeight>& hypernode_weight,
+                                            const HypernodeID num_removed_single_pin_hes,
+                                            const bool stable_construction) {
   switch ( type ) {
     case STATIC_HYPERGRAPH:
       return constructHypergraph<ds::StaticHypergraph>(
@@ -106,7 +90,9 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
           hyperedge_weight.data(), hypernode_weight.data(),
           num_removed_single_pin_hes, stable_construction);
       )
-    case COMPRESSED_HYPERGRAPH: // handled above
+    case COMPRESSED_HYPERGRAPH:
+      throw UnsupportedOperationException(
+        "Compressed hypergraphs can only be constructed by streaming an hMetis file.");
     case NULLPTR_HYPERGRAPH:
       return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
   }
@@ -160,6 +146,13 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
                                        const bool stable_construction,
                                        const bool remove_single_pin_hes,
                                        const bool print_warnings) {
+  if ( type == COMPRESSED_HYPERGRAPH ) {
+    auto* hypergraph = new ds::CompressedHypergraph(
+      ds::CompressedHypergraphFactory::stream(filename, remove_single_pin_hes));
+    return mt_kahypar_hypergraph_t {
+      reinterpret_cast<mt_kahypar_hypergraph_s*>(hypergraph), ds::CompressedHypergraph::TYPE };
+  }
+
   HyperedgeID num_hyperedges = 0;
   HypernodeID num_hypernodes = 0;
   HyperedgeID num_removed_single_pin_hyperedges = 0;
@@ -176,8 +169,8 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
 
 mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
                                       const mt_kahypar_hypergraph_type_t& type,
-                                      const bool stable_construction) {
-  if (type == COMPRESSED_HYPERGRAPH) throw InvalidInputException("Compressed hypergraphs only support hMetis files.");
+                                      const bool stable_construction,
+                                      const bool) {
   HyperedgeID num_edges = 0;
   HypernodeID num_vertices = 0;
   vec<HyperedgeWeight> edges_weight;
@@ -248,9 +241,8 @@ template<typename Hypergraph>
 void addFixedVertices(Hypergraph& hypergraph,
                       const mt_kahypar_partition_id_t* fixed_vertices,
                       const PartitionID k) {
-  ds::FixedVertexSupport<Hypergraph> fixed_vertex_support(
+  ds::FixedVertexSupport fixed_vertex_support(
     hypergraph.initialNumNodes(), k);
-  fixed_vertex_support.setHypergraph(&hypergraph);
   hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
     if ( fixed_vertices[hn] != -1 ) {
       if ( fixed_vertices[hn] < 0 || fixed_vertices[hn] >= k ) {
@@ -258,7 +250,7 @@ void addFixedVertices(Hypergraph& hypergraph,
           "Try to partition hypergraph into " + STR(k) + " blocks, but node " +
            STR(hn) + " is fixed to block " + STR(fixed_vertices[hn]));
       }
-      fixed_vertex_support.fixToBlock(hn, fixed_vertices[hn]);
+      fixed_vertex_support.fixToBlock(hypergraph, hn, fixed_vertices[hn]);
     }
   });
   hypergraph.addFixedVertexSupport(std::move(fixed_vertex_support));
@@ -266,7 +258,7 @@ void addFixedVertices(Hypergraph& hypergraph,
 
 template<typename Hypergraph>
 void removeFixedVertices(Hypergraph& hypergraph) {
-  ds::FixedVertexSupport<Hypergraph> fixed_vertex_support;
+  ds::FixedVertexSupport fixed_vertex_support;
   hypergraph.addFixedVertexSupport(std::move(fixed_vertex_support));
 }
 

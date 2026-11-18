@@ -27,6 +27,7 @@
 #pragma once
 
 #include <cstring>
+#include <limits>
 
 #ifndef NDEBUG
 #include <memory>
@@ -36,40 +37,116 @@
 #include <tbb/scalable_allocator.h>
 #endif
 
+#include "mt-kahypar/parallel/stl/heap_profiler.h"
+
 namespace mt_kahypar {
 namespace parallel {
 
+inline void mtk_record_allocation(void* ptr, size_t size) {
+#ifdef KAHYPAR_ENABLE_HEAP_PROFILING
+  if (ptr) {
+    heap_profiler::HeapProfiler::global().record_alloc(ptr, size);
+  }
+#else
+  (void) ptr;
+  (void) size;
+#endif
+}
+
+inline void mtk_record_deallocation(void* ptr) {
+#ifdef KAHYPAR_ENABLE_HEAP_PROFILING
+  if (ptr) {
+    heap_profiler::HeapProfiler::global().record_free(ptr);
+  }
+#else
+  (void) ptr;
+#endif
+}
+
 #ifndef NDEBUG
-// note: tbb allocators will still be used for TBB data structures such as
-// tbb::concurrent_vector, tbb::concurrent_queue or tbb::enumerable_thread_specific
+template<typename T>
+using scalable_allocator_base = std::allocator<T>;
+#else
+template<typename T>
+using scalable_allocator_base = tbb::tbb_allocator<T>;
+#endif
 
 template<typename T>
-using scalable_allocator = std::allocator<T>;
+class scalable_allocator : public scalable_allocator_base<T> {
+ public:
+  using value_type = T;
 
+  template<typename U>
+  struct rebind {
+    using other = scalable_allocator<U>;
+  };
+
+  scalable_allocator() noexcept = default;
+  template<typename U>
+  scalable_allocator(const scalable_allocator<U>&) noexcept { }
+
+  T* allocate(size_t n) {
+    scalable_allocator_base<T> base;
+    T* ptr = base.allocate(n);
+    mtk_record_allocation(ptr, n * sizeof(T));
+    return ptr;
+  }
+
+  void deallocate(T* ptr, size_t n) noexcept {
+    mtk_record_deallocation(ptr);
+    scalable_allocator_base<T> base;
+    base.deallocate(ptr, n);
+  }
+
+  template<typename U>
+  bool operator==(const scalable_allocator<U>&) const noexcept {
+    return true;
+  }
+
+  template<typename U>
+  bool operator!=(const scalable_allocator<U>&) const noexcept {
+    return false;
+  }
+};
+
+// note: TBB allocators will still be used for TBB data structures such as
+// tbb::concurrent_vector, tbb::concurrent_queue or tbb::enumerable_thread_specific
+#ifndef NDEBUG
 inline void* mtk_scalable_malloc(size_t size) {
-  return malloc(size);
+  void* ptr = malloc(size);
+  mtk_record_allocation(ptr, size);
+  return ptr;
 }
 
 inline void* mtk_scalable_calloc(size_t nobj, size_t size) {
-  return calloc(nobj, size);
+  void* ptr = calloc(nobj, size);
+  const size_t allocated_size =
+      nobj != 0 && size > std::numeric_limits<size_t>::max() / nobj ? 0 : nobj * size;
+  mtk_record_allocation(ptr, allocated_size);
+  return ptr;
 }
 
 inline void mtk_scalable_free(void* ptr) {
+  mtk_record_deallocation(ptr);
   free(ptr);
 }
 #else
-template <typename T>
-using scalable_allocator = tbb::tbb_allocator<T>;
-
 inline void* mtk_scalable_malloc(size_t size) {
-  return scalable_malloc(size);
+  void* ptr = scalable_malloc(size);
+  mtk_record_allocation(ptr, size);
+  return ptr;
 }
 
 inline void* mtk_scalable_calloc(size_t nobj, size_t size) {
-  return scalable_calloc(nobj, size);
+  void* ptr = scalable_calloc(nobj, size);
+  const size_t allocated_size =
+      nobj != 0 && size > std::numeric_limits<size_t>::max() / nobj ? 0 : nobj * size;
+  mtk_record_allocation(ptr, allocated_size);
+  return ptr;
 }
 
 inline void mtk_scalable_free(void* ptr) {
+  mtk_record_deallocation(ptr);
   scalable_free(ptr);
 }
 #endif

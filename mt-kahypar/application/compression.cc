@@ -18,7 +18,7 @@ namespace fs = std::filesystem;
 #include "mt-kahypar/io/hypergraph_factory.h"
 #include "mt-kahypar/io/partitioning_output.h"
 #include "mt-kahypar/io/presets.h"
-#include "mt-kahypar/parallel/tbb_initializer.h"
+#include "mt-kahypar/parallel/thread_management.h"
 #include "mt-kahypar/partition/conversion.h"
 #include "mt-kahypar/partition/mapping/target_graph.h"
 #include "mt-kahypar/partition/partitioner_facade.h"
@@ -220,7 +220,7 @@ void partition_graph(const std::string& filename, const Context& base_context,
 
     context.utility_id =
         utils::Utilities::instance().registerNewUtilityObjects();
-    if (context.partition.verbose_output) io::printBanner();
+    if (context.partition.enable_logging) io::printBanner();
 
     utils::Randomize::instance().setSeed(context.partition.seed);
     if (context.shared_memory.use_localized_random_shuffle) {
@@ -228,29 +228,26 @@ void partition_graph(const std::string& filename, const Context& base_context,
             context.shared_memory.shuffle_block_size);
     }
 
-#ifndef KAHYPAR_DISABLE_HWLOC
-    size_t num_available_cpus = HardwareTopology::instance().num_cpus();
-    if (num_available_cpus < context.shared_memory.num_threads) {
-        WARNING("There are currently only"
-                << num_available_cpus << "cpus available."
-                << "Setting number of threads from"
-                << context.shared_memory.num_threads << "to"
-                << num_available_cpus);
-        context.shared_memory.num_threads = num_available_cpus;
+    if constexpr (parallel::provides_hardware_information) {
+        size_t num_available_cpus = parallel::num_hardware_cpus();
+        if (num_available_cpus < context.shared_memory.num_threads) {
+            WARNING("There are currently only"
+                    << num_available_cpus << "cpus available."
+                    << "Setting number of threads from"
+                    << context.shared_memory.num_threads << "to"
+                    << num_available_cpus);
+            context.shared_memory.num_threads = num_available_cpus;
+        }
     }
-#endif
 
     // Initialize TBB task arenas on numa nodes
-    TBBInitializer::instance(context.shared_memory.num_threads);
+    parallel::initialize_tbb(context.shared_memory.num_threads);
 
-#ifndef KAHYPAR_DISABLE_HWLOC
-    // We set the membind policy to interleaved allocations in order to
-    // distribute allocations evenly across NUMA nodes
-    hwloc_cpuset_t cpuset = TBBInitializer::instance().used_cpuset();
-    parallel::HardwareTopology<>::instance()
-        .activate_interleaved_membind_policy(cpuset);
-    hwloc_bitmap_free(cpuset);
-#endif
+    if constexpr (parallel::provides_hardware_information) {
+        // We set the membind policy to interleaved allocations in order to
+        // distribute allocations evenly across NUMA nodes
+        parallel::activate_interleaved_membind_policy();
+    }
 
 		HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
     // Read Hypergraph
@@ -263,7 +260,8 @@ void partition_graph(const std::string& filename, const Context& base_context,
     mt_kahypar_hypergraph_t hypergraph = io::readInputFile(
         context.partition.graph_filename, context.partition.preset_type,
         context.partition.instance_type, context.partition.file_format,
-        context.preprocessing.stable_construction_of_incident_edges);
+        context.preprocessing.stable_construction_of_incident_edges,
+        /*remove_single_pin_hes=*/true, /*print_warnings=*/true);
 
     timer.stop_timer("io_hypergraph");
     // Memory after I/O: use MaxRSS (VmHWM) checkpoint
@@ -281,7 +279,8 @@ void partition_graph(const std::string& filename, const Context& base_context,
             target_graph = std::make_unique<TargetGraph>(
                 io::readInputFile<ds::StaticGraph>(
                     context.mapping.target_graph_file, FileFormat::Metis,
-                    true));
+                    /*stable_construction=*/true, /*remove_single_pin_hes=*/true,
+                    /*print_warnings=*/true));
         } else {
             throw InvalidInputException(
                 "No target graph file specified (use -g <file> or "
@@ -395,7 +394,7 @@ void partition_graph(const std::string& filename, const Context& base_context,
             malloc_trim(0);
             #endif
         }
-    TBBInitializer::instance().terminate();
+    parallel::terminate_tbb();
 
     utils::delete_hypergraph(hypergraph);
     utils::delete_partitioned_hypergraph(partitioned_hypergraph);
@@ -420,8 +419,8 @@ void print_progress(size_t current, size_t total) {
 
 int main(int argc, char* argv[]) {
     Context base(false);
-    processCommandLineInput(base, argc, argv, nullptr);
-    base.partition.verbose_output = false;
+    processCommandLineInput(base, argc, argv);
+    base.partition.enable_logging = false;
 
     fs::create_directories("./__out");
 

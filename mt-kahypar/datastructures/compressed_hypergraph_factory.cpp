@@ -11,6 +11,14 @@
 
 namespace mt_kahypar::ds {
 
+// hMetis header format type (formerly mt_kahypar::Type, removed upstream)
+enum class HMetisFormatType : int8_t {
+  Unweighted = 0,
+  EdgeWeights = 1,
+  NodeWeights = 10,
+  EdgeAndNodeWeights = 11,
+};
+
 static inline bool is_space(char c) {
   return std::isspace(static_cast<unsigned char>(c)) != 0;
 }
@@ -47,8 +55,8 @@ static inline size_t parseRawNumbers(const std::string& line, std::vector<size_t
 }
 
 // returns the line count of the header
-size_t parseHeader(std::ifstream& in, HypernodeID& num_nodes, HyperedgeID& num_he, mt_kahypar::Type& type) {
-  type = mt_kahypar::Type::Unweighted; // default
+size_t parseHeader(std::ifstream& in, HypernodeID& num_nodes, HyperedgeID& num_he, HMetisFormatType& type) {
+  type = HMetisFormatType::Unweighted; // default
   std::string line;
   size_t line_number = 0;
 
@@ -64,7 +72,7 @@ size_t parseHeader(std::ifstream& in, HypernodeID& num_nodes, HyperedgeID& num_h
     if (nums.size() < 2) throw InvalidInputException("Invalid header in input file line: " + std::to_string(line_number));
     num_he = static_cast<HyperedgeID>(nums[0]);
     num_nodes = static_cast<HypernodeID>(nums[1]);
-    if (nums.size() > 2) type = static_cast<mt_kahypar::Type>(nums[2]);
+    if (nums.size() > 2) type = static_cast<HMetisFormatType>(nums[2]);
     if (nums.size() > 3) throw InvalidInputException("Invalid header in input file line: " + std::to_string(line_number));
     break;
   }
@@ -90,7 +98,7 @@ CompressedHypergraph CompressedHypergraphFactory::stream(const std::string& file
 
   HypernodeID n_vertices = 0;
   HyperedgeID n_edges = 0;
-  mt_kahypar::Type type;
+  HMetisFormatType type;
 
   size_t current_line = parseHeader(in, n_vertices, n_edges, type);
   
@@ -112,8 +120,8 @@ CompressedHypergraph CompressedHypergraphFactory::stream(const std::string& file
   hg._hypernode_enabled.assign(V, true);
   hg._hyperedge_enabled.reserve(H);
 
-  const bool has_edge_weights = (type == mt_kahypar::Type::EdgeWeights || type == mt_kahypar::Type::EdgeAndNodeWeights);
-  const bool has_node_weights = (type == mt_kahypar::Type::NodeWeights || type == mt_kahypar::Type::EdgeAndNodeWeights);
+  const bool has_edge_weights = (type == HMetisFormatType::EdgeWeights || type == HMetisFormatType::EdgeAndNodeWeights);
+  const bool has_node_weights = (type == HMetisFormatType::NodeWeights || type == HMetisFormatType::EdgeAndNodeWeights);
 
   std::string line;
   std::vector<size_t> nums;

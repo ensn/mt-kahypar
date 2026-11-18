@@ -26,6 +26,12 @@
 
 #include "mt-kahypar/parallel/thread_management.h"
 
+#include <algorithm>
+#include <thread>
+
+#include <tbb/global_control.h>
+#include <tbb/task_arena.h>
+
 #ifndef KAHYPAR_DISABLE_HWLOC
   #include <hwloc.h>
 #endif
@@ -52,8 +58,21 @@ void initialize_tbb(const size_t num_threads) {
   mt_kahypar::TBBInitializer::initialize(std::max(num_threads, UL(1)));
 }
 
-void terminate_tbb() {
-  mt_kahypar::TBBInitializer::instance().terminate();
+bool terminate_tbb() {
+  return mt_kahypar::TBBInitializer::instance().terminate();
+}
+
+size_t max_num_thread_ids() {
+#if defined(MT_KAHYPAR_LIBRARY_MODE) || !defined(KAHYPAR_ENABLE_THREAD_PINNING)
+  // The arena a thread runs in can have more slots than the global thread limit
+  // (e.g., if it was created before the limit was set), so THREAD_ID may exceed
+  // max_allowed_parallelism. Take the larger value to stay in bounds.
+  return std::max<size_t>(
+    tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism),
+    tbb::this_task_arena::max_concurrency());
+#else
+  return std::thread::hardware_concurrency();
+#endif
 }
 
 int total_number_of_threads() {

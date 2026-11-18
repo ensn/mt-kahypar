@@ -560,6 +560,7 @@ public:
         _num_hypernodes(0),
         _num_removed_hypernodes(0),
         _removed_degree_zero_hn_weight(0),
+        _max_removed_degree_zero_hn_weight(0),
         _num_hyperedges(0),
         _num_removed_hyperedges(0),
         _max_edge_size(0),
@@ -588,6 +589,7 @@ public:
         _num_hypernodes(other._num_hypernodes),
         _num_removed_hypernodes(other._num_removed_hypernodes),
         _removed_degree_zero_hn_weight(other._removed_degree_zero_hn_weight),
+        _max_removed_degree_zero_hn_weight(other._max_removed_degree_zero_hn_weight),
         _num_hyperedges(other._num_hyperedges),
         _num_removed_hyperedges(other._num_removed_hyperedges),
         _max_edge_size(other._max_edge_size),
@@ -605,7 +607,6 @@ public:
         _community_ids(std::move(other._community_ids)),
         _fixed_vertices(std::move(other._fixed_vertices)),
         _tmp_contraction_buffer(std::move(other._tmp_contraction_buffer)) {
-        _fixed_vertices.setHypergraph(this);
         other._tmp_contraction_buffer = nullptr;
     }
 
@@ -614,6 +615,7 @@ public:
             _num_hypernodes = other._num_hypernodes;
             _num_removed_hypernodes = other._num_removed_hypernodes;
             _removed_degree_zero_hn_weight = other._removed_degree_zero_hn_weight;
+            _max_removed_degree_zero_hn_weight = other._max_removed_degree_zero_hn_weight;
             _num_hyperedges = other._num_hyperedges;
             _num_removed_hyperedges = other._num_removed_hyperedges;
             _max_edge_size = other._max_edge_size;
@@ -630,7 +632,6 @@ public:
             _hyperedge_weights = std::move(other._hyperedge_weights);
             _community_ids = std::move(other._community_ids);
             _fixed_vertices = std::move(other._fixed_vertices);
-            _fixed_vertices.setHypergraph(this);
             _tmp_contraction_buffer = std::move(other._tmp_contraction_buffer);
             other._tmp_contraction_buffer = nullptr;
         }
@@ -653,6 +654,11 @@ public:
 
     HypernodeWeight weightOfRemovedDegreeZeroVertices() const {
         return _removed_degree_zero_hn_weight;
+    }
+
+    // ! Max weight of removed degree zero vertex
+    HypernodeWeight maxWeightOfRemovedDegreeZeroNode() const {
+        return _max_removed_degree_zero_hn_weight;
     }
 
     HyperedgeID initialNumEdges() const {
@@ -774,6 +780,8 @@ public:
     void removeDegreeZeroHypernode(const HypernodeID u) {
         ASSERT(nodeDegree(u) == 0);
         _removed_degree_zero_hn_weight += nodeWeight(u);
+        _max_removed_degree_zero_hn_weight =
+            std::max(_max_removed_degree_zero_hn_weight, nodeWeight(u));
         removeHypernode(u);
     }
 
@@ -781,6 +789,7 @@ public:
         hypernode(u).enable();
         ASSERT(nodeDegree(u) == 0);
         _removed_degree_zero_hn_weight -= nodeWeight(u);
+        _max_removed_degree_zero_hn_weight = 0;
     }
 
     // ####################### Hyperedge Information #######################
@@ -820,9 +829,8 @@ public:
 
     // ####################### Fixed Vertex Support #######################
 
-    void addFixedVertexSupport(FixedVertexSupport<CompressedHypergraph>&& fixed_vertices) {
+    void addFixedVertexSupport(FixedVertexSupport&& fixed_vertices) {
         _fixed_vertices = std::move(fixed_vertices);
-        _fixed_vertices.setHypergraph(this);
     }
 
     bool hasFixedVertices() const {
@@ -849,11 +857,11 @@ public:
         _fixed_vertices.setMaxBlockWeight(max_block_weights);
     }
 
-    const FixedVertexSupport<CompressedHypergraph>& fixedVertexSupport() const {
+    const FixedVertexSupport& fixedVertexSupport() const {
         return _fixed_vertices;
     }
 
-    FixedVertexSupport<CompressedHypergraph> copyOfFixedVertexSupport() const {
+    FixedVertexSupport copyOfFixedVertexSupport() const {
         return _fixed_vertices.copy();
     }
 
@@ -1010,6 +1018,11 @@ public:
 
         // Mirror static semantics: do not change removed count
         disableHyperedge(he);
+    }
+
+    // ! Restores a hyperedge previously removed from the hypergraph
+    void restoreEdge(const HyperedgeID he) {
+        restoreLargeEdge(he);
     }
 
     void restoreLargeEdge(const HyperedgeID& he) {
@@ -1182,11 +1195,12 @@ public:
     _hyperedge_weights.clear();
         _community_ids.clear();
         _community_ids.shrink_to_fit();
-        _fixed_vertices = FixedVertexSupport<CompressedHypergraph>();
+        _fixed_vertices = FixedVertexSupport();
         // Reset stats
         _num_hypernodes = 0;
         _num_removed_hypernodes = 0;
         _removed_degree_zero_hn_weight = 0;
+        _max_removed_degree_zero_hn_weight = 0;
         _num_hyperedges = 0;
         _num_removed_hyperedges = 0;
         _max_edge_size = 0;
@@ -1290,6 +1304,8 @@ private:
     HypernodeID _num_hypernodes;
     HypernodeID _num_removed_hypernodes;
     HypernodeWeight _removed_degree_zero_hn_weight;
+    // ! Maximum weight of all removed degree zero nodes
+    HypernodeWeight _max_removed_degree_zero_hn_weight;
     HyperedgeID _num_hyperedges;
     HyperedgeID _num_removed_hyperedges;
     HypernodeID _max_edge_size;
@@ -1310,7 +1326,7 @@ private:
 
     // Communities and fixed vertices (uncompressed as requested)
     ds::Clustering _community_ids;
-    FixedVertexSupport<CompressedHypergraph> _fixed_vertices;
+    FixedVertexSupport _fixed_vertices;
 
     // Data reused throughout multilevel hierarchy
     TmpContractionBuffer* _tmp_contraction_buffer = nullptr;

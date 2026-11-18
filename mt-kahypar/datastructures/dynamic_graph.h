@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <queue>
 
@@ -36,14 +37,13 @@
 #include "include/mtkahypartypes.h"
 
 #include "kahypar-resources/meta/mandatory.h"
-#include "kahypar-resources/datastructure/fast_reset_flag_array.h"
 #include "kahypar-resources/utils/math.h"
 
 #include "mt-kahypar/datastructures/hypergraph_common.h"
 #include "mt-kahypar/datastructures/fixed_vertex_support.h"
 #include "mt-kahypar/datastructures/dynamic_adjacency_array.h"
 #include "mt-kahypar/datastructures/contraction_tree.h"
-#include "mt-kahypar/datastructures/thread_safe_fast_reset_flag_array.h"
+#include "mt-kahypar/parallel/atomic_wrapper.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
 #include "mt-kahypar/utils/memory_tree.h"
 #include "mt-kahypar/utils/exception.h"
@@ -104,7 +104,7 @@ class DynamicGraph {
       _valid(valid) { }
 
     bool isDisabled() const {
-      return _valid == false;
+      return !parallel::atomic_load(_valid, std::memory_order_relaxed);
     }
 
     void enable() {
@@ -114,10 +114,14 @@ class DynamicGraph {
 
     void disable() {
       ASSERT(!isDisabled());
-      _valid = false;
+      std::atomic_ref(_valid).store(false, std::memory_order_relaxed);
     }
 
-    HypernodeWeight weight() const {
+    HypernodeWeight& weight() {
+      return _weight;
+    }
+
+    const HypernodeWeight& weight() const {
       return _weight;
     }
 
@@ -312,7 +316,7 @@ class DynamicGraph {
     INVALID_FIXED_VERTEX_CONTRACTION = 3
   };
 
-  using OwnershipVector = parallel::scalable_vector<parallel::IntegralAtomicWrapper<bool>>;
+  using OwnershipVector = parallel::scalable_vector<SpinLock>;
   using ThreadLocalHyperedgeVector = tbb::enumerable_thread_specific<parallel::scalable_vector<HyperedgeID>>;
   using Edge = DynamicAdjacencyArray::Edge;
 
@@ -366,7 +370,6 @@ class DynamicGraph {
     _adjacency_array(std::move(other._adjacency_array)),
     _acquired_nodes(std::move(other._acquired_nodes)),
     _fixed_vertices(std::move(other._fixed_vertices)) {
-    _fixed_vertices.setHypergraph(this);
   }
 
   DynamicGraph & operator= (DynamicGraph&& other) {
@@ -381,7 +384,6 @@ class DynamicGraph {
     _adjacency_array = std::move(other._adjacency_array);
     _acquired_nodes = std::move(other._acquired_nodes);
     _fixed_vertices = std::move(other._fixed_vertices);
-    _fixed_vertices.setHypergraph(this);
     return *this;
   }
 
@@ -480,9 +482,8 @@ class DynamicGraph {
 
   // ! Returns a range to loop over the pins of hyperedge e.
   IteratorRange<IncidenceIterator> pins(const HyperedgeID id) const {
-    const Edge& e = edge(id);
-    const HypernodeID source = e.source;
-    const HypernodeID target = e.target;
+    const HypernodeID source = edgeSource(id);
+    const HypernodeID target = edgeTarget(id);
     return IteratorRange<IncidenceIterator>(
       IncidenceIterator(source, target, 0),
       IncidenceIterator(source, target, 2));
@@ -493,7 +494,7 @@ class DynamicGraph {
   // ! Weight of a vertex
   HypernodeWeight nodeWeight(const HypernodeID u) const {
     ASSERT(u < numNodes(), "Hypernode" << u << "does not exist");
-    return hypernode(u).weight();
+    return parallel::atomic_load(hypernode(u).weight(), std::memory_order_relaxed);
   }
 
   // ! Sets the weight of a vertex
@@ -602,11 +603,11 @@ class DynamicGraph {
   }
 
   HyperedgeID edgeSource(const HyperedgeID e) const {
-    return edge(e).source;
+    return parallel::atomic_load(edge(e).source, std::memory_order_relaxed);
   }
 
   HyperedgeID edgeTarget(const HyperedgeID e) const {
-    return edge(e).target;
+    return parallel::atomic_load(edge(e).target, std::memory_order_relaxed);
   }
 
   bool isSinglePin(const HyperedgeID e) const {
@@ -639,9 +640,8 @@ class DynamicGraph {
 
   // ####################### Fixed Vertex Support #######################
 
-  void addFixedVertexSupport(FixedVertexSupport<DynamicGraph>&& fixed_vertices) {
+  void addFixedVertexSupport(FixedVertexSupport&& fixed_vertices) {
     _fixed_vertices = std::move(fixed_vertices);
-    _fixed_vertices.setHypergraph(this);
   }
 
   bool hasFixedVertices() const {
@@ -668,11 +668,11 @@ class DynamicGraph {
     _fixed_vertices.setMaxBlockWeight(max_block_weights);
   }
 
-  const FixedVertexSupport<DynamicGraph>& fixedVertexSupport() const {
+  const FixedVertexSupport& fixedVertexSupport() const {
     return _fixed_vertices;
   }
 
-  FixedVertexSupport<DynamicGraph> copyOfFixedVertexSupport() const {
+  FixedVertexSupport copyOfFixedVertexSupport() const {
     return _fixed_vertices.copy();
   }
 
@@ -851,24 +851,17 @@ class DynamicGraph {
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void acquireHypernode(const HypernodeID u) {
     ASSERT(u < numNodes(), "Hypernode" << u << "does not exist");
-    bool expected = false;
-    bool desired = true;
-    while ( !_acquired_nodes[u].compare_exchange_strong(expected, desired) ) {
-      expected = false;
-    }
+    _acquired_nodes[u].lock();
   }
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE bool tryAcquireHypernode(const HypernodeID u) {
     ASSERT(u < numNodes(), "Hypernode" << u << "does not exist");
-    bool expected = false;
-    bool desired = true;
-    return _acquired_nodes[u].compare_exchange_strong(expected, desired);
+    return _acquired_nodes[u].tryLock();
   }
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void releaseHypernode(const HypernodeID u) {
     ASSERT(u < numNodes(), "Hypernode" << u << "does not exist");
-    ASSERT(_acquired_nodes[u], "Hypernode" << u << "is not acquired!");
-    _acquired_nodes[u] = false;
+    _acquired_nodes[u].unlock();
   }
 
   // ####################### Iterators #######################
@@ -932,7 +925,7 @@ class DynamicGraph {
   OwnershipVector _acquired_nodes;
 
   // ! Fixed Vertex Support
-  FixedVertexSupport<DynamicGraph> _fixed_vertices;
+  FixedVertexSupport _fixed_vertices;
 };
 
 } // namespace ds

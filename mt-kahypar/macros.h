@@ -30,6 +30,14 @@
 #include <sstream>
 #include <type_traits>
 
+#include <tbb/version.h>
+
+// oneTBB provides tbb::finalize (which waits for the worker threads to exit)
+// only since version 2021.6 (interface version 12060).
+#if TBB_INTERFACE_VERSION >= 12060
+#define MT_KAHYPAR_TBB_SUPPORTS_FINALIZE
+#endif
+
 #if defined(MT_KAHYPAR_LIBRARY_MODE) ||                                        \
     !defined(KAHYPAR_ENABLE_THREAD_PINNING)
 #include <tbb/task_arena.h>
@@ -49,15 +57,6 @@
 #endif
 
 #include "kahypar-resources/macros.h"
-
-#define SPECIALIZATION(EXPR, TYPE)                                             \
-  template <bool T = EXPR> std::enable_if_t<T, TYPE>
-
-#define TRUE_SPECIALIZATION(EXPR, TYPE)                                        \
-  template <bool T = EXPR> std::enable_if_t<T, TYPE>
-
-#define FALSE_SPECIALIZATION(EXPR, TYPE)                                       \
-  template <bool T = EXPR> std::enable_if_t<!T, TYPE>
 
 #if (defined(__GNUC__) || defined(__clang__)) && defined(NDEBUG)
 #define MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE __attribute__ ((always_inline)) inline
@@ -132,13 +131,20 @@
 #define STREAM2STR(X) static_cast<std::stringstream>(X).str();
 
 // Info, Warning and Error Output Macros
-#define GREEN "\033[1;92m"
-#define CYAN "\033[1;96m"
-#define YELLOW "\033[1;93m"
-#define RED "\033[1;91m"
-#define WHITE "\033[1;97m"
-#define BOLD "\033[1m"
-#define END "\033[0m"
+// kahypar-resources defines some of these macros as well
+#undef GREEN
+#undef CYAN
+#undef YELLOW
+#undef RED
+#undef BOLD
+#undef END
+#define GREEN ::mt_kahypar::color::code("\033[1;92m")
+#define CYAN ::mt_kahypar::color::code("\033[1;96m")
+#define YELLOW ::mt_kahypar::color::code("\033[1;93m")
+#define RED ::mt_kahypar::color::code("\033[1;91m")
+#define WHITE ::mt_kahypar::color::code("\033[1;97m")
+#define BOLD ::mt_kahypar::color::code("\033[1m")
+#define END ::mt_kahypar::color::code("\033[0m")
 #define INFO(msg) LOG << CYAN << "[INFO]" << END << msg
 #ifdef WARNING
 #undef WARNING
@@ -176,6 +182,9 @@
   }
 #endif
 
+// needs MT_KAHYPAR_IS_LIBRARY_MODE
+#include "mt-kahypar/utils/color.h"
+
 #ifdef KAHYPAR_ENABLE_EXPERIMENTAL_FEATURES
 #define ENABLE_EXPERIMENTAL_FEATURES(X) X
 #else
@@ -192,6 +201,20 @@
 #define ENABLE_LARGE_K(X) X
 #else
 #define ENABLE_LARGE_K(X)
+#endif
+
+#ifdef KAHYPAR_ENABLE_DETERMINISTIC_FEATURES
+#define ENABLE_DETERMINISTIC(X) X
+#define MT_KAHYPAR_HAS_DETERMINISTIC_FEATURES true
+#else
+#define ENABLE_DETERMINISTIC(X)
+#define MT_KAHYPAR_HAS_DETERMINISTIC_FEATURES false
+#endif
+
+#ifdef KAHYPAR_ENABLE_QUALITY_FEATURES
+#define MT_KAHYPAR_HAS_QUALITY_FEATURES true
+#else
+#define MT_KAHYPAR_HAS_QUALITY_FEATURES false
 #endif
 
 #ifdef KAHYPAR_ENABLE_HIGHEST_QUALITY_FEATURES

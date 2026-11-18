@@ -94,7 +94,7 @@ bool DeterministicMultilevelCoarsener<TypeTraits>::coarseningPassImpl() {
     clusters[u] = u;
   });
 
-  ds::FixedVertexSupport<Hypergraph> fixed_vertices = hg.copyOfFixedVertexSupport();
+  ds::FixedVertexSupport fixed_vertices = hg.copyOfFixedVertexSupport();
   fixed_vertices.setMaxBlockWeight(_context.partition.max_part_weights);
 
   permutation.random_grouping(num_nodes, _context.shared_memory.static_balancing_work_packages, config.prng());
@@ -127,7 +127,7 @@ void DeterministicMultilevelCoarsener<TypeTraits>::clusterNodesInRange(vec<Hyper
                                                                        HypernodeID& num_nodes,
                                                                        size_t first,
                                                                        size_t last,
-                                                                       ds::FixedVertexSupport<Hypergraph>& fixed_vertices) {
+                                                                       ds::FixedVertexSupport& fixed_vertices) {
   const Hypergraph& hg = Base::currentHypergraph();
 
   // each vertex finds a cluster it wants to join
@@ -162,11 +162,11 @@ void DeterministicMultilevelCoarsener<TypeTraits>::clusterNodesInRange(vec<Hyper
           cluster_weights_to_fix.push_back_buffered(u);
         }
         if constexpr (has_fixed_vertices) {
-          bool success = fixed_vertices.contractWithoutChains(target, u);
+          bool success = fixed_vertices.contractWithoutChains(hg, target, u);
           ASSERT(success); unused(success);
         }
         clusters[u] = target;
-        cluster_weight[target] = opportunistic_cluster_weight[target];
+        std::atomic_ref(cluster_weight[target]).store(opportunistic_cluster_weight[target], std::memory_order_relaxed);
       } else {
         if (opportunistic_cluster_weight[u] != hg.nodeWeight(u)) {
           // node u could still not move
@@ -218,7 +218,7 @@ template<bool has_fixed_vertices, typename RatingMap>
 void DeterministicMultilevelCoarsener<TypeTraits>::calculatePreferredTargetCluster(HypernodeID u,
                                                                                    const vec<HypernodeID>& clusters,
                                                                                    RatingMap& tmp_ratings,
-                                                                                   const ds::FixedVertexSupport<Hypergraph>& fixed_vertices) {
+                                                                                   const ds::FixedVertexSupport& fixed_vertices) {
   const Hypergraph& hg = Base::currentHypergraph();
   tmp_ratings.clear();
 
@@ -295,7 +295,7 @@ void DeterministicMultilevelCoarsener<TypeTraits>::calculatePreferredTargetClust
 
 template<typename TypeTraits>
 template<bool has_fixed_vertices>
-size_t DeterministicMultilevelCoarsener<TypeTraits>::approveNodes(vec<HypernodeID>& clusters, ds::FixedVertexSupport<Hypergraph>& fixed_vertices) {
+size_t DeterministicMultilevelCoarsener<TypeTraits>::approveNodes(vec<HypernodeID>& clusters, ds::FixedVertexSupport& fixed_vertices) {
   const Hypergraph& hg = Base::currentHypergraph();
   tbb::enumerable_thread_specific<size_t> num_contracted_nodes { 0 };
 
@@ -323,17 +323,17 @@ size_t DeterministicMultilevelCoarsener<TypeTraits>::approveNodes(vec<HypernodeI
           break;
         }
         if constexpr (has_fixed_vertices) {
-          bool success = fixed_vertices.contractWithoutChains(target, v);
+          bool success = fixed_vertices.contractWithoutChains(hg, target, v);
           ASSERT(success); unused(success);
         }
         clusters[v] = target;
         target_weight += hg.nodeWeight(v);
-        if (opportunistic_cluster_weight[v] == hg.nodeWeight(v)) {
+        if (std::atomic_ref(opportunistic_cluster_weight[v]).load(std::memory_order_relaxed) == hg.nodeWeight(v)) {
           num_contracted_local += 1;
         }
       }
       cluster_weight[target] = target_weight;
-      opportunistic_cluster_weight[target] = target_weight;
+      std::atomic_ref(opportunistic_cluster_weight[target]).store(target_weight, std::memory_order_relaxed);
       num_contracted_nodes.local() += num_contracted_local;
     }
   });
@@ -345,12 +345,12 @@ template<typename TypeTraits>
 void DeterministicMultilevelCoarsener<TypeTraits>::handleNodeSwaps(const size_t first, const size_t last, const Hypergraph& hg) {
   tbb::parallel_for(first, last, [&](size_t pos) {
     const HypernodeID u = permutation.at(pos);
-    const HypernodeID v = propositions[u];
-    if (u < v && u == propositions[v]) {
+    const HypernodeID v = std::atomic_ref(propositions[u]).load(std::memory_order_relaxed);
+    if (u < v && u == std::atomic_ref(propositions[v]).load(std::memory_order_relaxed)) {
       const HypernodeID target = opportunistic_cluster_weight[u] > opportunistic_cluster_weight[v] ? u : v;
       const HypernodeID source = target == u ? v : u;
-      propositions[u] = target;
-      propositions[v] = target;
+      std::atomic_ref(propositions[u]).store(target, std::memory_order_relaxed);
+      std::atomic_ref(propositions[v]).store(target, std::memory_order_relaxed);
       opportunistic_cluster_weight[source] -= hg.nodeWeight(target);
     }
   });

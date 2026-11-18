@@ -186,14 +186,13 @@ namespace rb {
                                            const PartitionID k) {
     if ( hg.hasFixedVertices() ) {
       const PartitionID m = k / 2 + (k % 2);
-      ds::FixedVertexSupport<Hypergraph> fixed_vertices(hg.initialNumNodes(), 2);
-      fixed_vertices.setHypergraph(&hg);
+      ds::FixedVertexSupport fixed_vertices(hg.initialNumNodes(), 2);
       hg.doParallelForAllNodes([&](const HypernodeID& hn) {
         if ( hg.isFixed(hn) ) {
           if ( hg.fixedVertexBlock(hn) < m ) {
-            fixed_vertices.fixToBlock(hn, 0);
+            fixed_vertices.fixToBlock(hg, hn, 0);
           } else {
-            fixed_vertices.fixToBlock(hn, 1);
+            fixed_vertices.fixToBlock(hg, hn, 1);
           }
         }
       });
@@ -208,14 +207,13 @@ namespace rb {
                                       const PartitionID k0,
                                       const PartitionID k1) {
     if ( input_hg.hasFixedVertices() ) {
-      ds::FixedVertexSupport<Hypergraph> fixed_vertices(
+      ds::FixedVertexSupport fixed_vertices(
         extracted_hg.initialNumNodes(), k1 - k0);
-      fixed_vertices.setHypergraph(&extracted_hg);
       input_hg.doParallelForAllNodes([&](const HypernodeID& hn) {
         if ( input_hg.isFixed(hn) ) {
           const PartitionID block = input_hg.fixedVertexBlock(hn);
           if ( block >= k0 && block < k1 ) {
-            fixed_vertices.fixToBlock(input2extracted[hn], block - k0);
+            fixed_vertices.fixToBlock(extracted_hg, input2extracted[hn], block - k0);
           }
         }
       });
@@ -267,7 +265,7 @@ namespace rb {
       // Multilevel Bipartitioning
       const PartitionID k = (k1 - k0);
       Hypergraph& hg = phg.hypergraph();
-      ds::FixedVertexSupport<Hypergraph> fixed_vertices = hg.copyOfFixedVertexSupport();
+      ds::FixedVertexSupport fixed_vertices = hg.copyOfFixedVertexSupport();
       Context b_context = setupBipartitioningContext(hg, context, info);
       setupFixedVerticesForBipartitioning(hg, k);
       adaptWeightsOfNonCutEdges(hg, already_cut, context.partition.gain_policy, false);
@@ -324,6 +322,7 @@ namespace rb {
             << "Block" << block_0 << "is further partitioned into k =" << rb_k0 << "blocks\n";
         recursively_bipartition_block<TypeTraits>(phg, context, block_0, 0, rb_k0, info, already_cut, 1.0);
       }
+      phg.resetEdgeSynchronization();
     }
   }
 }
@@ -365,13 +364,11 @@ void rb::recursively_bipartition_block(typename TypeTraits::PartitionedHypergrap
         }
       }
     });
-    phg.resetEdgeSynchronization();
     DBG << "Recursive Bipartitioning Result -"
         << "k =" << (k1 - k0)
         << "Objective =" << metrics::quality(phg, context)
         << "Imbalance =" << metrics::imbalance(phg, rb_context)
         << "(Target Imbalance =" << rb_context.partition.epsilon << ")";
-
   }
 }
 

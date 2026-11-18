@@ -286,6 +286,7 @@ class MemoryPoolT {
       optimize_memory_allocations();
     }
     const size_t num_memory_segments = _memory_chunks.size();
+    SCOPED_HEAP_PROFILER("Memory Pool", "registered chunks")
     tbb::parallel_for(UL(0), num_memory_segments, [&](const size_t i) {
       if (_memory_chunks[i].allocate()) {
         DBG << "Allocate memory chunk of size"

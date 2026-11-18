@@ -446,13 +446,12 @@ namespace mt_kahypar::ds {
 
     // Fixed vertices
     if (hasFixedVertices()) {
-      FixedVertexSupport<CompressedHypergraph> coarse_fixed(hypergraph.initialNumNodes(), _fixed_vertices.numBlocks());
-      coarse_fixed.setHypergraph(&hypergraph);
+      FixedVertexSupport coarse_fixed(hypergraph.initialNumNodes(), _fixed_vertices.numBlocks());
       for (HypernodeID hn = 0; hn < _num_hypernodes; ++hn) {
         if (isFixed(hn)) {
           const HypernodeID ch = communities[hn];
           if (ch != kInvalidHypernode) {
-            coarse_fixed.fixToBlock(ch, fixedVertexBlock(hn));
+            coarse_fixed.fixToBlock(hypergraph, ch, fixedVertexBlock(hn));
           }
         }
       }
@@ -470,6 +469,7 @@ namespace mt_kahypar::ds {
     hypergraph._num_removed_hypernodes = _num_removed_hypernodes;
     hypergraph._num_hyperedges = _num_hyperedges;
     hypergraph._num_removed_hyperedges = _num_removed_hyperedges;
+    hypergraph._max_removed_degree_zero_hn_weight = _max_removed_degree_zero_hn_weight;
     hypergraph._max_edge_size = _max_edge_size;
     hypergraph._num_pins = _num_pins;
     hypergraph._total_degree = _total_degree;
@@ -511,6 +511,7 @@ namespace mt_kahypar::ds {
     hypergraph._num_removed_hypernodes = _num_removed_hypernodes;
     hypergraph._num_hyperedges = _num_hyperedges;
     hypergraph._num_removed_hyperedges = _num_removed_hyperedges;
+    hypergraph._max_removed_degree_zero_hn_weight = _max_removed_degree_zero_hn_weight;
     hypergraph._max_edge_size = _max_edge_size;
     hypergraph._num_pins = _num_pins;
     hypergraph._total_degree = _total_degree;
