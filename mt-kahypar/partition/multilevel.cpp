@@ -44,6 +44,7 @@
 #include "mt-kahypar/partition/mapping/initial_mapping.h"
 #endif
 #include "mt-kahypar/parallel/memory_pool.h"
+#include "mt-kahypar/parallel/stl/heap_profiler.h"
 #include "mt-kahypar/io/partitioning_output.h"
 #include "mt-kahypar/partition/coarsening/multilevel/multilevel_uncoarsener.h"
 #ifdef KAHYPAR_ENABLE_HIGHEST_QUALITY_FEATURES
@@ -91,8 +92,12 @@ namespace {
     UncoarseningData<TypeTraits> uncoarseningData(nlevel, hypergraph, context);
 
     utils::Timer& timer = utils::Utilities::instance().getTimer(context.utility_id);
+    // This function is re-entered recursively (and concurrently) during initial partitioning,
+    // so we only profile the top-level call.
+    [[maybe_unused]] const bool profile_heap = context.type == ContextType::main;
     timer.start_timer("coarsening", "Coarsening");
     {
+      SCOPED_HEAP_PROFILER_IF(profile_heap, "Coarsening");
       std::unique_ptr<ICoarsener> coarsener = CoarsenerFactory::getInstance().createObject(
         context.coarsening.algorithm, utils::hypergraph_cast(hypergraph),
         context, uncoarsening::to_pointer(uncoarseningData));
@@ -110,6 +115,8 @@ namespace {
     // ################## INITIAL PARTITIONING ##################
     io::printInitialPartitioningBanner(context);
     timer.start_timer("initial_partitioning", "Initial Partitioning");
+    {
+    SCOPED_HEAP_PROFILER_IF(profile_heap, "Initial Partitioning");
     PartitionedHypergraph& phg = uncoarseningData.coarsestPartitionedHypergraph();
 
     if ( !is_vcycle ) {
@@ -185,11 +192,14 @@ namespace {
       utils::Utilities::instance().getInitialPartitioningStats(
         context.utility_id).printInitialPartitioningStats();
     }
+    } // initial partitioning heap profile
     timer.stop_timer("initial_partitioning");
 
     // ################## UNCOARSENING ##################
     io::printLocalSearchBanner(context);
     timer.start_timer("refinement", "Refinement");
+    {
+    SCOPED_HEAP_PROFILER_IF(profile_heap, "Refinement");
     std::unique_ptr<IUncoarsener<TypeTraits>> uncoarsener(nullptr);
     ALWAYS_ASSERT(uncoarseningData.nlevel == !Hypergraph::is_static_hypergraph);
     if constexpr ( Hypergraph::is_static_hypergraph ) {
@@ -204,6 +214,7 @@ namespace {
     partitioned_hg = uncoarsener->uncoarsen();
 
     io::printPartitioningResults(partitioned_hg, context, "Local Search Results:");
+    } // refinement heap profile
     timer.stop_timer("refinement");
 
     return partitioned_hg;
@@ -244,6 +255,7 @@ void Multilevel<TypeTraits>::partitionVCycle(Hypergraph& hypergraph,
   ASSERT(context.partition.num_vcycles > 0);
 
   for ( size_t i = 0; i < context.partition.num_vcycles; ++i ) {
+    SCOPED_HEAP_PROFILER_IF(context.type == ContextType::main, "V-Cycle", std::to_string(i + 1));
     // Reset memory pool
     hypergraph.reset();
     parallel::MemoryPool::instance().reset();

@@ -47,6 +47,7 @@
 #include "mt-kahypar/utils/timer.h"
 #include "mt-kahypar/utils/exception.h"
 #include "mt-kahypar/utils/utilities.h"
+#include "mt-kahypar/parallel/stl/heap_profiler.h"
 
 
 namespace mt_kahypar {
@@ -339,11 +340,15 @@ namespace mt_kahypar {
 
     // ################## PREPROCESSING ##################
     utils::Timer& timer = utils::Utilities::instance().getTimer(context.utility_id);
+    [[maybe_unused]] const bool profile_heap = context.type == ContextType::main;
     timer.start_timer("preprocessing", "Preprocessing");
     DegreeZeroHypernodeRemover<TypeTraits> degree_zero_hn_remover(context);
     LargeHyperedgeRemover<TypeTraits> large_he_remover(context);
-    preprocess(hypergraph, context, target_graph);
-    sanitize(hypergraph, context, degree_zero_hn_remover, large_he_remover);
+    {
+      SCOPED_HEAP_PROFILER_IF(profile_heap, "Preprocessing");
+      preprocess(hypergraph, context, target_graph);
+      sanitize(hypergraph, context, degree_zero_hn_remover, large_he_remover);
+    }
     timer.stop_timer("preprocessing");
 
     // ################## MULTILEVEL & VCYCLE ##################
@@ -376,9 +381,12 @@ namespace mt_kahypar {
 
     // ################## POSTPROCESSING ##################
     timer.start_timer("postprocessing", "Postprocessing");
-    large_he_remover.restoreSinglePinAndLargeHyperedges(partitioned_hypergraph);
-    degree_zero_hn_remover.restoreDegreeZeroHypernodes(partitioned_hypergraph);
-    forceFixedVertexAssignment(partitioned_hypergraph, context);
+    {
+      SCOPED_HEAP_PROFILER_IF(profile_heap, "Postprocessing");
+      large_he_remover.restoreSinglePinAndLargeHyperedges(partitioned_hypergraph);
+      degree_zero_hn_remover.restoreDegreeZeroHypernodes(partitioned_hypergraph);
+      forceFixedVertexAssignment(partitioned_hypergraph, context);
+    }
     timer.stop_timer("postprocessing");
 
     #ifdef KAHYPAR_ENABLE_STEINER_TREE_METRIC
@@ -424,10 +432,14 @@ namespace mt_kahypar {
     io::printPartitioningResults(partitioned_hg, context, "\nInput Partition:");
 
     // ################## PREPROCESSING ##################
+    [[maybe_unused]] const bool profile_heap = context.type == ContextType::main;
     timer.start_timer("preprocessing", "Preprocessing");
     DegreeZeroHypernodeRemover<TypeTraits> degree_zero_hn_remover(context);
     LargeHyperedgeRemover<TypeTraits> large_he_remover(context);
-    sanitize(hypergraph, context, degree_zero_hn_remover, large_he_remover);
+    {
+      SCOPED_HEAP_PROFILER_IF(profile_heap, "Preprocessing");
+      sanitize(hypergraph, context, degree_zero_hn_remover, large_he_remover);
+    }
     timer.stop_timer("preprocessing");
 
     // ################## MULTILEVEL & VCYCLE ##################
@@ -440,9 +452,12 @@ namespace mt_kahypar {
 
     // ################## POSTPROCESSING ##################
     timer.start_timer("postprocessing", "Postprocessing");
-    large_he_remover.restoreSinglePinAndLargeHyperedges(partitioned_hg);
-    degree_zero_hn_remover.restoreDegreeZeroHypernodes(partitioned_hg);
-    forceFixedVertexAssignment(partitioned_hg, context);
+    {
+      SCOPED_HEAP_PROFILER_IF(profile_heap, "Postprocessing");
+      large_he_remover.restoreSinglePinAndLargeHyperedges(partitioned_hg);
+      degree_zero_hn_remover.restoreDegreeZeroHypernodes(partitioned_hg);
+      forceFixedVertexAssignment(partitioned_hg, context);
+    }
     timer.stop_timer("postprocessing");
 
     if (context.partition.enable_logging && context.partition.verbose_logging) {

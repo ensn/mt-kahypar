@@ -36,6 +36,7 @@
 #include "mt-kahypar/parallel/thread_management.h"
 #include "mt-kahypar/partition/partitioner_facade.h"
 #include "mt-kahypar/partition/registries/register_memory_pool.h"
+#include "mt-kahypar/parallel/stl/heap_profiler.h"
 #include "mt-kahypar/partition/registries/registry.h"
 #include "mt-kahypar/partition/conversion.h"
 #include "mt-kahypar/partition/mapping/target_graph.h"
@@ -100,16 +101,23 @@ int run(int argc, char* argv[]) {
   utils::Timer& timer =
     utils::Utilities::instance().getTimer(context.utility_id);
   timer.start_timer("io_hypergraph", "I/O Hypergraph");
-  mt_kahypar_hypergraph_t hypergraph = io::readInputFile(
-      context.partition.graph_filename, context.partition.preset_type,
-      context.partition.instance_type, context.partition.file_format,
-      context.preprocessing.stable_construction_of_incident_edges,
-      /*remove_single_pin_hes=*/true, /*print_warnings=*/true);
+  mt_kahypar_hypergraph_t hypergraph { nullptr, NULLPTR_HYPERGRAPH };
+  {
+    // The input file itself is mmap'ed (not heap). Allocations here are the parsed edge lists
+    // (temporary) and the final hypergraph data structure (alive until the end of the program).
+    SCOPED_HEAP_PROFILER("Input Hypergraph");
+    hypergraph = io::readInputFile(
+        context.partition.graph_filename, context.partition.preset_type,
+        context.partition.instance_type, context.partition.file_format,
+        context.preprocessing.stable_construction_of_incident_edges,
+        /*remove_single_pin_hes=*/true, /*print_warnings=*/true);
+  }
   timer.stop_timer("io_hypergraph");
 
   // Read Target Graph
   std::unique_ptr<TargetGraph> target_graph;
   if ( context.partition.objective == Objective::steiner_tree ) {
+    SCOPED_HEAP_PROFILER("Target Graph");
     if ( context.mapping.target_graph_file != "" ) {
       target_graph = std::make_unique<TargetGraph>(
         io::readInputFile<ds::StaticGraph>(
@@ -134,16 +142,19 @@ int run(int argc, char* argv[]) {
   // Partition Hypergraph
   HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
   mt_kahypar_partitioned_hypergraph_t partitioned_hypergraph { nullptr, NULLPTR_PARTITION };
-  if ( context.partition.input_partition_filename != "" ) {
-    // Improve a given partition with V-cycles
-    partitioned_hypergraph = PartitionerFacade::readPartitionFile(
-      hypergraph, context, context.partition.input_partition_filename);
-    if ( context.partition.num_vcycles == 0 ) {
-      context.partition.num_vcycles = 1;
+  {
+    SCOPED_HEAP_PROFILER("Partitioning");
+    if ( context.partition.input_partition_filename != "" ) {
+      // Improve a given partition with V-cycles
+      partitioned_hypergraph = PartitionerFacade::readPartitionFile(
+        hypergraph, context, context.partition.input_partition_filename);
+      if ( context.partition.num_vcycles == 0 ) {
+        context.partition.num_vcycles = 1;
+      }
+      PartitionerFacade::improve(partitioned_hypergraph, context, target_graph.get());
+    } else {
+      partitioned_hypergraph = PartitionerFacade::partition(hypergraph, context, target_graph.get());
     }
-    PartitionerFacade::improve(partitioned_hypergraph, context, target_graph.get());
-  } else {
-    partitioned_hypergraph = PartitionerFacade::partition(hypergraph, context, target_graph.get());
   }
   HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
 

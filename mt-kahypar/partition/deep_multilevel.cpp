@@ -49,6 +49,7 @@
 #include "mt-kahypar/utils/timer.h"
 #include "mt-kahypar/utils/progress_bar.h"
 #include "mt-kahypar/io/partitioning_output.h"
+#include "mt-kahypar/parallel/stl/heap_profiler.h"
 
 namespace mt_kahypar {
 
@@ -680,8 +681,12 @@ PartitionID deep_multilevel_partitioning(typename TypeTraits::PartitionedHypergr
   bool no_further_contractions_possible = true;
   bool should_continue = true;
   adapt_max_allowed_node_weight(hypergraph.initialNumNodes(), should_continue);
+  // Recursive calls (bipartitioning of blocks) run concurrently with
+  // ContextType::initial_partitioning, so we only profile the top-level call.
+  const bool profile_heap = context.type == ContextType::main;
   timer.start_timer("coarsening", "Coarsening");
   {
+    SCOPED_HEAP_PROFILER_IF(profile_heap, "Coarsening");
     std::unique_ptr<ICoarsener> coarsener = CoarsenerFactory::getInstance().createObject(
       context.coarsening.algorithm, utils::hypergraph_cast(hypergraph),
       context, uncoarsening::to_pointer(uncoarseningData));
@@ -729,6 +734,7 @@ PartitionID deep_multilevel_partitioning(typename TypeTraits::PartitionedHypergr
   // ################## Initial Partitioning ##################
   io::printInitialPartitioningBanner(context);
   timer.start_timer("initial_partitioning", "Initial Partitioning");
+  if ( profile_heap ) { START_HEAP_PROFILER("Initial Partitioning"); }
   const bool was_enabled_before = disableTimerAndStats(context);
   PartitionedHypergraph& coarsest_phg = uncoarseningData.coarsestPartitionedHypergraph();
   PartitionID current_k = kInvalidPartition;
@@ -820,11 +826,13 @@ PartitionID deep_multilevel_partitioning(typename TypeTraits::PartitionedHypergr
       context.utility_id).printInitialPartitioningStats();
   }
   enableTimerAndStats(context, was_enabled_before);
+  if ( profile_heap ) { STOP_HEAP_PROFILER(); }
   timer.stop_timer("initial_partitioning");
 
   // ################## UNCOARSENING ##################
   io::printLocalSearchBanner(context);
   timer.start_timer("refinement", "Refinement");
+  if ( profile_heap ) { START_HEAP_PROFILER("Refinement"); }
   const bool progress_bar_enabled = context.partition.enable_logging &&
     context.partition.enable_progress_bar && !debug;
   context.partition.enable_progress_bar = false;
@@ -949,6 +957,7 @@ PartitionID deep_multilevel_partitioning(typename TypeTraits::PartitionedHypergr
   partitioned_hg = uncoarsener->movePartitionedHypergraph();
 
   io::printPartitioningResults(partitioned_hg, context, "Local Search Results:");
+  if ( profile_heap ) { STOP_HEAP_PROFILER(); }
   timer.stop_timer("refinement");
 
   return current_k;

@@ -28,10 +28,15 @@
 
 #define STOP_HEAP_PROFILER() mt_kahypar::parallel::heap_profiler::HeapProfiler::global().stop_profile()
 
-#define SCOPED_HEAP_PROFILER_IMPL(line, ...)                                                       \
-  const auto mtkahypar_scoped_heap_profiler_##line =                                               \
-      mt_kahypar::parallel::heap_profiler::ScopedHeapProfiler(__VA_ARGS__)
-#define SCOPED_HEAP_PROFILER(...) SCOPED_HEAP_PROFILER_IMPL(__LINE__, __VA_ARGS__);
+// Two-level concatenation so that __LINE__ is expanded before token pasting.
+#define MTKAHYPAR_HEAP_PROFILER_CONCAT_IMPL(a, b) a##b
+#define MTKAHYPAR_HEAP_PROFILER_CONCAT(a, b) MTKAHYPAR_HEAP_PROFILER_CONCAT_IMPL(a, b)
+
+#define SCOPED_HEAP_PROFILER_IF(condition, ...)                                                    \
+  const mt_kahypar::parallel::heap_profiler::ScopedHeapProfiler                                    \
+      MTKAHYPAR_HEAP_PROFILER_CONCAT(mtkahypar_scoped_heap_profiler_, __LINE__)(                   \
+          (condition), __VA_ARGS__);
+#define SCOPED_HEAP_PROFILER(...) SCOPED_HEAP_PROFILER_IF(true, __VA_ARGS__)
 
 #define ENABLE_HEAP_PROFILER() mt_kahypar::parallel::heap_profiler::HeapProfiler::global().enable()
 #define DISABLE_HEAP_PROFILER() mt_kahypar::parallel::heap_profiler::HeapProfiler::global().disable()
@@ -49,6 +54,7 @@ constexpr bool kHeapProfiling = true;
 #define START_HEAP_PROFILER(...)
 #define STOP_HEAP_PROFILER()
 #define SCOPED_HEAP_PROFILER(...)
+#define SCOPED_HEAP_PROFILER_IF(...)
 #define ENABLE_HEAP_PROFILER()
 #define DISABLE_HEAP_PROFILER()
 #define PRINT_HEAP_PROFILE(...)
@@ -405,25 +411,42 @@ private:
 /*!
  * A helper class for scoped heap profiling. The profile starts with the construction of the object
  * and ends with the destruction of the object.
+ *
+ * The profile tree has a single global "current node" and is not thread-aware. Scopes must
+ * therefore only be opened from code that is never executed concurrently with other scopes
+ * (in Mt-KaHyPar: code running with ContextType::main). Pass active = false to make the scope a
+ * no-op, e.g. when the same code is re-entered recursively inside initial partitioning.
  */
 class ScopedHeapProfiler {
 public:
   /*!
    * Constructs a new scoped heap profiler and thereby starting a new heap profile.
    *
+   * @param active Whether this scope records a profile at all.
    * @param name The name of the started profile.
    * @param description The description of the started profile.
    */
-  ScopedHeapProfiler(std::string_view name, std::string description = {}) {
-    HeapProfiler::global().start_profile(name, description);
+  ScopedHeapProfiler(const bool active, std::string_view name, std::string description = {})
+      : _active(active) {
+    if (_active) {
+      HeapProfiler::global().start_profile(name, std::move(description));
+    }
   }
+
+  ScopedHeapProfiler(const ScopedHeapProfiler &) = delete;
+  ScopedHeapProfiler &operator=(const ScopedHeapProfiler &) = delete;
 
   /*!
    * Deconstructs the scoped heap profiler and thereby stopping the heap profile.
    */
   inline ~ScopedHeapProfiler() {
-    HeapProfiler::global().stop_profile();
+    if (_active) {
+      HeapProfiler::global().stop_profile();
+    }
   }
+
+private:
+  const bool _active;
 };
 
 } // namespace mt_kahypar::parallel::heap_profiler
